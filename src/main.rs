@@ -7,7 +7,7 @@ use rayon::{ThreadPool, ThreadPoolBuilder};
 use std::fs;
 use std::io::{self, ErrorKind, Write};
 use std::num::NonZeroUsize;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::thread;
 use std::time::Instant;
@@ -94,7 +94,8 @@ fn do_main() -> anyhow::Result<()> {
         );
     };
 
-    let mut root = home::rustup_home()?;
+    // let mut root = home::rustup_home()?;
+    let mut root = PathBuf::from("home");
     create_dir_if_not_exists(&root)?;
     root.push("toolchains");
     create_dir_if_not_exists(&root)?;

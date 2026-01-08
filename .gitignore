@@ -1,2 +1,5 @@
 /Cargo.lock
 /target
+
+# So that we can use `RUSTUP_HOME=home CARGO_HOME=home cargo run`
+/home

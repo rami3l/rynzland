@@ -1,3 +1,21 @@
+# rynzland
+
+## Quick Start
+
+```console
+# To install the example toolchain:
+> make
+
+# To uninstall it:
+> make clean
+```
+
+## Appendix
+
+The original README is listed below.
+
+---
+
 fast-rustup
 ===========
 
