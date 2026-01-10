@@ -1,0 +1,19 @@
+[package]
+name = "rynzland"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+
+[lints.rust]
+missing_copy_implementations = "warn"
+missing_debug_implementations = "warn"
+trivial_numeric_casts = "warn"
+unsafe_code = "forbid"
+unused_allocation = "warn"
+
+[lints.clippy]
+dbg_macro = "warn"
+nursery = "warn"
+pedantic = "warn"
+todo = "warn"
