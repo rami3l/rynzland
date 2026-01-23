@@ -12,9 +12,13 @@ use pathdiff::diff_paths;
 use tokio::fs;
 use tracing::info;
 
-use crate::util::normalize_toolchain;
+use crate::{
+    toolchain::{IdentifiableToolchain, rust_ver_from_manifest},
+    util::qualify_with_target,
+};
 
 mod rustup;
+mod toolchain;
 mod util;
 
 /// Hey choom, mind giving me a hand?
@@ -32,6 +36,8 @@ enum RynzlandSubcmd {
     Rm(RmSubCmd),
     Run(RunSubCmd),
     Nuke(NukeSubcmd),
+    Id(IdSubcmd),
+    IdChan(IdChanSubcmd),
 }
 
 /// set up a local rustup installation
@@ -84,6 +90,27 @@ struct RunSubCmd {
 #[argh(subcommand, name = "nuke")]
 struct NukeSubcmd {}
 
+/// print the ID of a toolchain
+#[derive(FromArgs, Clone, PartialEq, Debug)]
+#[argh(subcommand, name = "id")]
+struct IdSubcmd {
+    /// the toolchain to identify
+    #[argh(positional)]
+    toolchain: String,
+}
+/// identify a channel by downloading its manifest
+#[derive(FromArgs, Clone, PartialEq, Debug)]
+#[argh(subcommand, name = "id-chan")]
+struct IdChanSubcmd {
+    /// the toolchain channel to identify
+    #[argh(positional)]
+    channel: String,
+
+    /// explicit list of components to include
+    #[argh(option, short = 'c')]
+    components: Vec<String>,
+}
+
 static LOCAL_HOME: LazyLock<PathBuf> = LazyLock::new(|| Path::new("home").canonicalize().unwrap());
 static LOCAL_RUSTUP: LazyLock<PathBuf> = LazyLock::new(|| LOCAL_HOME.join("rustup"));
 static LOCAL_RUSTUP_HOME: LazyLock<PathBuf> = LazyLock::new(|| LOCAL_HOME.join("rustup_home"));
@@ -120,6 +147,8 @@ async fn main() -> Result<()> {
         RynzlandSubcmd::Rm(rm) => rm.run().await?,
         RynzlandSubcmd::Run(run) => run.run()?,
         RynzlandSubcmd::Nuke(nuke) => nuke.run().await?,
+        RynzlandSubcmd::Id(id) => id.run()?,
+        RynzlandSubcmd::IdChan(id_chan) => id_chan.run().await?,
     }
 
     Ok(())
@@ -165,11 +194,11 @@ impl AddSubcmd {
     async fn run(&self) -> Result<()> {
         unsafe { set_env_local() };
 
-        let toolchain = normalize_toolchain(&self.toolchain);
+        let toolchain = qualify_with_target(&self.toolchain);
         let source = self
             .source
             .as_deref()
-            .map_or_else(|| Cow::Borrowed(&*toolchain), normalize_toolchain);
+            .map_or_else(|| Cow::Borrowed(&*toolchain), qualify_with_target);
 
         if toolchain == source {
             info!("adding toolchain: {toolchain}");
@@ -201,7 +230,7 @@ impl RmSubCmd {
     async fn run(&self) -> Result<()> {
         unsafe { set_env_local() };
 
-        let toolchain = normalize_toolchain(&self.toolchain);
+        let toolchain = qualify_with_target(&self.toolchain);
         info!("removing toolchain: {toolchain}");
 
         // TODO: Use juntion on Windows
@@ -275,6 +304,54 @@ impl NukeSubcmd {
             }
         }
 
+        Ok(())
+    }
+}
+
+impl IdSubcmd {
+    fn run(&self) -> Result<()> {
+        unsafe { set_env_rynzland() };
+
+        let toolchain = qualify_with_target(&self.toolchain);
+        let toolchain_path = LOCAL_RYNZLAND_HOME.join("toolchains").join(&*toolchain);
+        let id = IdentifiableToolchain::new(&toolchain_path)?.id();
+        println!("{id}");
+        Ok(())
+    }
+}
+
+impl IdChanSubcmd {
+    async fn run(&self) -> Result<()> {
+        let temp_dir = tempfile::Builder::new().prefix("rynzland").tempdir()?;
+        let temp_dir = temp_dir.path();
+        fs::create_dir_all(&temp_dir).await?;
+
+        let manifest_url = rustup::manifest_url(&self.channel);
+        let manifest_path = temp_dir.join("multirust-channel-manifest.toml");
+        info!("downloading manifest from {manifest_url}...");
+        util::download_file(&manifest_url, &manifest_path).await?;
+        let rust_ver = rust_ver_from_manifest(&manifest_path)?;
+
+        let components = match &self.components[..] {
+            [] => ["rustc", "cargo", "rust-std"]
+                .into_iter()
+                .chain(
+                    util::BUILD_TARGET
+                        .ends_with("-pc-windows-gnu")
+                        .then_some("rust-mingw"),
+                )
+                .map(|s| qualify_with_target(s).to_string())
+                .collect(),
+            cs => cs.iter().map(|s| qualify_with_target(s).into()).collect(),
+        };
+
+        let id = IdentifiableToolchain {
+            rust_ver,
+            components,
+        }
+        .id();
+
+        println!("{id}");
         Ok(())
     }
 }

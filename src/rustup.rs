@@ -14,6 +14,10 @@ fn rustup_url(version: &str) -> String {
     )
 }
 
+pub fn manifest_url(channel: &str) -> String {
+    format!("https://static.rust-lang.org/dist/channel-rust-{channel}.toml")
+}
+
 pub async fn setup(dest: &Path) -> Result<()> {
     // Pin a pre-XDG rustup to simplify path config.
     let url = rustup_url("1.28.2");
