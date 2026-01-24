@@ -12,10 +12,7 @@ use cmd_lib::run_cmd;
 use pathdiff::diff_paths;
 use tracing::info;
 
-use crate::{
-    toolchain::{IdentifiableToolchain, rust_ver_from_manifest},
-    util::qualify_with_target,
-};
+use crate::{toolchain::IdentifiableToolchain, util::qualify_with_target};
 
 mod rustup;
 mod toolchain;
@@ -195,29 +192,41 @@ impl AddSubcmd {
         unsafe { set_env_local() };
 
         let toolchain = qualify_with_target(&self.toolchain);
-        let source = self
+        let src = self
             .source
             .as_deref()
             .map_or_else(|| Cow::Borrowed(&*toolchain), qualify_with_target);
 
-        if toolchain == source {
-            info!("adding toolchain: {toolchain}");
+        let chan = src
+            .strip_suffix(&format!("-{}", util::BUILD_TARGET))
+            .unwrap();
+        let id = toolchain::resolve_channel(chan, &[])?.id();
+
+        if toolchain == src {
+            info!("adding toolchain: {toolchain} (id: {id})");
         } else {
-            info!("adding toolchain: {toolchain} from source {source}");
+            info!("adding toolchain: {toolchain} from source {src} (id: {id})");
         }
 
         // TODO: Use juntion on Windows
-        let actual = LOCAL_RUSTUP_HOME.join("toolchains").join(&*source);
+        let src_old = LOCAL_RUSTUP_HOME.join("toolchains").join(&*src);
+        let src_with_id = LOCAL_RUSTUP_HOME.join("toolchains").join(&id);
         let link = LOCAL_RYNZLAND_HOME.join("toolchains").join(&*toolchain);
-        let actual = diff_paths(&actual, link.parent().unwrap()).unwrap_or(actual);
+        let relative_target = diff_paths(&src_with_id, link.parent().unwrap())
+            .map_or_else(|| Cow::Borrowed(&src_with_id), Cow::Owned);
 
         // NOTE: We create the in-flight link first to declare the beginning of the
         // transaction of the `link` toolchain creation.
         let mut link_in_flight = link.clone();
         link_in_flight.set_extension("tmp");
-        ofs::symlink(&actual, &link_in_flight)?;
+        ofs::symlink(&*relative_target, &link_in_flight)?;
 
-        run_cmd! { $LOCAL_RUSTUP install $source }?;
+        if src_with_id.exists() {
+            info!("toolchain with id {id} already installed, skipping...");
+        } else {
+            run_cmd! { $LOCAL_RUSTUP install $src }?;
+            fs::rename(&src_old, &src_with_id)?;
+        }
 
         // NOTE: Renaming is atomic on most platforms.
         // This also declares the successful end of the transaction.
@@ -236,7 +245,7 @@ impl RmSubCmd {
         // TODO: Use juntion on Windows
         let link = LOCAL_RYNZLAND_HOME.join("toolchains").join(&*toolchain);
         let link_target = fs::read_link(&link)?;
-        let underlying_toolchain = link_target.file_name().unwrap().to_string_lossy();
+        let underlying = link_target.file_name().unwrap().to_string_lossy();
 
         fs::remove_file(&link)?;
 
@@ -255,10 +264,8 @@ impl RmSubCmd {
             }
         }
         if !referenced {
-            info!(
-                "underlying toolchain {underlying_toolchain} is no longer referenced, removing..."
-            );
-            run_cmd! { $LOCAL_RUSTUP uninstall $underlying_toolchain }?;
+            info!("underlying toolchain {underlying} is no longer referenced, removing...");
+            run_cmd! { $LOCAL_RUSTUP uninstall $underlying }?;
         }
 
         Ok(())
@@ -326,36 +333,8 @@ impl IdSubcmd {
 
 impl IdChanSubcmd {
     fn run(&self) -> Result<()> {
-        let temp_dir = tempfile::Builder::new().prefix("rynzland").tempdir()?;
-        let temp_dir = temp_dir.path();
-        fs::create_dir_all(temp_dir)?;
-
-        let manifest_url = rustup::manifest_url(&self.channel);
-        let manifest_path = temp_dir.join("multirust-channel-manifest.toml");
-        info!("downloading manifest from {manifest_url}...");
-        util::download_file(&manifest_url, &manifest_path)?;
-        let rust_ver = rust_ver_from_manifest(&manifest_path)?;
-
-        let components = match &self.components[..] {
-            [] => ["rustc", "cargo", "rust-std"]
-                .into_iter()
-                .chain(
-                    util::BUILD_TARGET
-                        .ends_with("-pc-windows-gnu")
-                        .then_some("rust-mingw"),
-                )
-                .map(|s| qualify_with_target(s).to_string())
-                .collect(),
-            cs => cs.iter().map(|s| qualify_with_target(s).into()).collect(),
-        };
-
-        let id = IdentifiableToolchain {
-            rust_ver,
-            components,
-        }
-        .id();
-
-        println!("{id}");
+        let id_toolchain = toolchain::resolve_channel(&self.channel, &self.components)?;
+        println!("{}", id_toolchain.id());
         Ok(())
     }
 }

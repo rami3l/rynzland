@@ -8,8 +8,12 @@ use std::{
 };
 
 use anyhow::{self, Context, Result};
+use tracing::info;
 
-use crate::util::HashEncoder;
+use crate::{
+    rustup,
+    util::{self, HashEncoder, qualify_with_target},
+};
 
 static CHANNEL_MANIFEST_SUBPATH: LazyLock<&'static Path> =
     LazyLock::new(|| Path::new("lib/rustlib/multirust-channel-manifest.toml"));
@@ -26,6 +30,36 @@ pub struct IdentifiableToolchain {
     // TODO: Investigate whether host targets need to be normalized,
     // as well as whether `multirust-config.toml` should be used instead.
     pub components: BTreeSet<String>,
+}
+
+pub fn resolve_channel(channel: &str, components: &[String]) -> Result<IdentifiableToolchain> {
+    let temp_dir = tempfile::Builder::new().prefix("rynzland").tempdir()?;
+    let temp_dir = temp_dir.path();
+    fs::create_dir_all(temp_dir)?;
+
+    let manifest_url = rustup::manifest_url(channel);
+    let manifest_path = temp_dir.join("multirust-channel-manifest.toml");
+    info!("downloading manifest from {manifest_url}...");
+    util::download_file(&manifest_url, &manifest_path)?;
+    let rust_ver = rust_ver_from_manifest(&manifest_path)?;
+
+    let components = match components {
+        [] => ["rustc", "cargo", "rust-std"]
+            .into_iter()
+            .chain(
+                util::BUILD_TARGET
+                    .ends_with("-pc-windows-gnu")
+                    .then_some("rust-mingw"),
+            )
+            .map(|s| qualify_with_target(s).to_string())
+            .collect(),
+        cs => cs.iter().map(|s| qualify_with_target(s).into()).collect(),
+    };
+
+    Ok(IdentifiableToolchain {
+        rust_ver,
+        components,
+    })
 }
 
 impl IdentifiableToolchain {
