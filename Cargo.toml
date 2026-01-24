@@ -29,3 +29,5 @@ dbg_macro = "warn"
 nursery = "warn"
 pedantic = "warn"
 todo = "warn"
+missing_errors_doc = { level = "allow", priority = 1 }
+missing_panics_doc = { level = "allow", priority = 1 }
