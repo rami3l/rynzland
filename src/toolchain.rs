@@ -2,13 +2,14 @@ use std::{
     borrow::ToOwned,
     collections::BTreeSet,
     fs,
-    hash::{DefaultHasher, Hash, Hasher},
+    hash::{Hash, Hasher},
     path::Path,
     sync::LazyLock,
 };
 
 use anyhow::{self, Context, Result};
 use tracing::info;
+use twox_hash::XxHash64;
 
 use crate::{
     rustup,
@@ -63,6 +64,8 @@ pub fn resolve_channel(channel: &str, components: &[String]) -> Result<Identifia
 }
 
 impl IdentifiableToolchain {
+    pub const SEED: u64 = 0xfeed_1ced_0d06_f00d;
+
     pub fn new(toolchain: &Path) -> Result<Self> {
         let manifest_path = toolchain.join(*CHANNEL_MANIFEST_SUBPATH);
         let rust_ver = rust_ver_from_manifest(&manifest_path)?;
@@ -80,13 +83,12 @@ impl IdentifiableToolchain {
     pub fn id(&self) -> String {
         let mut id = String::new();
 
-        let mut hasher = DefaultHasher::new();
-        self.rust_ver.hash(&mut hasher);
-        id.push_str(&HashEncoder::encode(hasher.finish()));
+        let hash = XxHash64::oneshot(Self::SEED, self.rust_ver.as_bytes());
+        id.push_str(&HashEncoder::encode(hash));
 
         id.push('-');
 
-        hasher = DefaultHasher::new();
+        let mut hasher = XxHash64::with_seed(Self::SEED);
         self.components.hash(&mut hasher);
         id.push_str(&HashEncoder::encode(hasher.finish()));
 
