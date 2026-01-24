@@ -106,9 +106,10 @@ pub fn rust_ver_from_manifest(manifest_path: &Path) -> Result<String> {
     let manifest = fs::read_to_string(manifest_path)
         .with_context(|| format!("when reading manifest at {}", manifest_path.display()))?;
     let manifest: toml::Value = toml::from_str(&manifest)?;
+
     Ok(enter_table(&manifest, "pkg")
-        .and_then(|pkg| enter_table(pkg, "rust"))
-        .and_then(|rust| enter_table(rust, "version"))
-        .context("failed to get pkg.rust from channel manifest")?
+        .and_then(|it| enter_table(it, "rust"))
+        .and_then(|it| enter_table(it, "version"))
+        .context("failed to get `pkg.rust.version` from channel manifest")?
         .to_string())
 }
