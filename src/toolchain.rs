@@ -81,9 +81,21 @@ impl IdentifiableToolchain {
     }
 
     pub fn id(&self) -> String {
-        let mut id = String::new();
+        let ver = &self.rust_ver;
 
-        let hash = XxHash64::oneshot(Self::SEED, self.rust_ver.as_bytes());
+        let ver_rlimit = ver
+            .bytes()
+            .take_while(|&b| b".0123456789".contains(&b))
+            .count();
+        let short_ver = &ver[..ver_rlimit];
+
+        let mut id = if short_ver.is_empty() {
+            "unknown-".to_owned()
+        } else {
+            short_ver.to_owned() + "-"
+        };
+
+        let hash = XxHash64::oneshot(Self::SEED, ver.as_bytes());
         id.push_str(&HashEncoder::encode(hash));
 
         id.push('-');
@@ -112,6 +124,7 @@ pub fn rust_ver_from_manifest(manifest_path: &Path) -> Result<String> {
     Ok(enter_table(&manifest, "pkg")
         .and_then(|it| enter_table(it, "rust"))
         .and_then(|it| enter_table(it, "version"))
+        .and_then(|it| it.as_str().context("expected a string"))
         .context("failed to get `pkg.rust.version` from channel manifest")?
-        .to_string())
+        .to_owned())
 }
