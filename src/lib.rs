@@ -6,7 +6,7 @@ use std::{
     sync::LazyLock,
 };
 
-use anyhow::Result;
+use anyhow::{Context, Result};
 use argh::FromArgs;
 use cmd_lib::run_cmd;
 use pathdiff::diff_paths;
@@ -17,6 +17,9 @@ use crate::{toolchain::IdentifiableToolchain, util::qualify_with_target};
 mod rustup;
 mod toolchain;
 mod util;
+
+#[cfg(test)]
+mod test;
 
 /// Hey choom, mind giving me a hand?
 #[derive(FromArgs, PartialEq, Eq, Debug)]
@@ -108,7 +111,7 @@ pub struct IdChanSubcmd {
     components: Vec<String>,
 }
 
-static LOCAL_HOME: LazyLock<PathBuf> = LazyLock::new(|| Path::new("home").canonicalize().unwrap());
+static LOCAL_HOME: LazyLock<&'static Path> = LazyLock::new(|| Path::new("home"));
 static LOCAL_RUSTUP: LazyLock<PathBuf> = LazyLock::new(|| LOCAL_HOME.join("rustup"));
 static LOCAL_RUSTUP_HOME: LazyLock<PathBuf> = LazyLock::new(|| LOCAL_HOME.join("rustup_home"));
 static LOCAL_RYNZLAND_HOME: LazyLock<PathBuf> = LazyLock::new(|| LOCAL_HOME.join("rynzland_home"));
@@ -153,7 +156,9 @@ impl SetupSubcmd {
 
         let local_rustup_link = local_cargo_bin.join("rustup");
         if !local_rustup_link.try_exists()? {
-            ofs::symlink(&*LOCAL_RUSTUP, &local_rustup_link)?;
+            let relative_target =
+                diff_paths(&*LOCAL_RUSTUP, local_cargo_bin).context("malformed FS link path")?;
+            ofs::symlink(&relative_target, &local_rustup_link)?;
         }
 
         run_cmd! { $LOCAL_RUSTUP --version }?;
@@ -190,14 +195,14 @@ impl AddSubcmd {
         let src_old = LOCAL_RUSTUP_HOME.join("toolchains").join(&*src);
         let src_with_id = LOCAL_RUSTUP_HOME.join("toolchains").join(&id);
         let link = LOCAL_RYNZLAND_HOME.join("toolchains").join(&*toolchain);
-        let relative_target = diff_paths(&src_with_id, link.parent().unwrap())
-            .map_or_else(|| Cow::Borrowed(&src_with_id), Cow::Owned);
+        let relative_target =
+            diff_paths(&src_with_id, link.parent().unwrap()).context("malformed FS link path")?;
 
         // NOTE: We create the in-flight link first to declare the beginning of the
         // transaction of the `link` toolchain creation.
         let mut link_in_flight = link.clone();
         link_in_flight.set_extension("tmp");
-        ofs::symlink(&*relative_target, &link_in_flight)?;
+        ofs::symlink(&relative_target, &link_in_flight)?;
 
         if src_with_id.exists() {
             info!("toolchain with id {id} already installed, skipping...");
@@ -279,7 +284,7 @@ impl NukeSubcmd {
     pub fn run(self) -> Result<()> {
         info!("nuking local rustup installation...");
 
-        let walker = fs::read_dir(&*LOCAL_HOME)?;
+        let walker = fs::read_dir(*LOCAL_HOME)?;
         for entry in walker {
             let entry = entry?;
             let file_type = entry.file_type()?;
