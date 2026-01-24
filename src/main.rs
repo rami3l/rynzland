@@ -1,6 +1,7 @@
 use std::{
     borrow::Cow,
-    env, iter,
+    env, fs, iter,
+    os::unix::fs as ofs,
     path::{Path, PathBuf},
     sync::LazyLock,
 };
@@ -9,7 +10,6 @@ use anyhow::Result;
 use argh::FromArgs;
 use cmd_lib::run_cmd;
 use pathdiff::diff_paths;
-use tokio::fs;
 use tracing::info;
 
 use crate::{
@@ -131,8 +131,7 @@ unsafe fn set_env_rynzland() {
     }
 }
 
-#[tokio::main(flavor = "current_thread")]
-async fn main() -> Result<()> {
+fn main() -> Result<()> {
     tracing_subscriber::fmt::init();
     unsafe {
         env::remove_var("RUSTUP_TOOLCHAIN");
@@ -142,27 +141,28 @@ async fn main() -> Result<()> {
     let app: Rynzland = argh::from_env();
     match app.subcmd {
         // TODO: Figure out how to check for and how to handle toolchain updates
-        RynzlandSubcmd::Setup(setup) => setup.run().await?,
-        RynzlandSubcmd::Add(add) => add.run().await?,
-        RynzlandSubcmd::Rm(rm) => rm.run().await?,
+        RynzlandSubcmd::Setup(setup) => setup.run()?,
+        RynzlandSubcmd::Add(add) => add.run()?,
+        RynzlandSubcmd::Rm(rm) => rm.run()?,
         RynzlandSubcmd::Run(run) => run.run()?,
-        RynzlandSubcmd::Nuke(nuke) => nuke.run().await?,
+        RynzlandSubcmd::Nuke(nuke) => nuke.run()?,
         RynzlandSubcmd::Id(id) => id.run()?,
-        RynzlandSubcmd::IdChan(id_chan) => id_chan.run().await?,
+        RynzlandSubcmd::IdChan(id_chan) => id_chan.run()?,
     }
 
     Ok(())
 }
 
 impl SetupSubcmd {
-    async fn run(&self) -> Result<()> {
+    #[allow(clippy::unused_self)]
+    fn run(self) -> Result<()> {
         unsafe { set_env_local() };
 
-        if fs::try_exists(&*LOCAL_RUSTUP).await? {
+        if LOCAL_RUSTUP.try_exists()? {
             info!("rustup already set up, skipping...");
         } else {
             info!("setting up rustup...");
-            rustup::setup(&LOCAL_RUSTUP).await?;
+            rustup::setup(&LOCAL_RUSTUP)?;
         }
         // TODO: Use hardlink as a fallback on Windows
         info!("setting up FS link to local rustup...");
@@ -173,12 +173,12 @@ impl SetupSubcmd {
             &LOCAL_RUSTUP_HOME.join("toolchains"),
             &LOCAL_RYNZLAND_HOME.join("toolchains"),
         ] {
-            fs::create_dir_all(dir).await?;
+            fs::create_dir_all(dir)?;
         }
 
         let local_rustup_link = local_cargo_bin.join("rustup");
-        if !fs::try_exists(&local_rustup_link).await? {
-            fs::symlink(&*LOCAL_RUSTUP, &local_rustup_link).await?;
+        if !local_rustup_link.try_exists()? {
+            ofs::symlink(&*LOCAL_RUSTUP, &local_rustup_link)?;
         }
 
         run_cmd! { $LOCAL_RUSTUP --version }?;
@@ -191,7 +191,7 @@ impl SetupSubcmd {
 }
 
 impl AddSubcmd {
-    async fn run(&self) -> Result<()> {
+    fn run(&self) -> Result<()> {
         unsafe { set_env_local() };
 
         let toolchain = qualify_with_target(&self.toolchain);
@@ -211,23 +211,23 @@ impl AddSubcmd {
         let link = LOCAL_RYNZLAND_HOME.join("toolchains").join(&*toolchain);
         let actual = diff_paths(&actual, link.parent().unwrap()).unwrap_or(actual);
 
-        // NOTE: We create the in-flight link first to declare the beginning of the transaction of
-        // the `link` toolchain creation.
+        // NOTE: We create the in-flight link first to declare the beginning of the
+        // transaction of the `link` toolchain creation.
         let mut link_in_flight = link.clone();
         link_in_flight.set_extension("tmp");
-        fs::symlink(&actual, &link_in_flight).await?;
+        ofs::symlink(&actual, &link_in_flight)?;
 
         run_cmd! { $LOCAL_RUSTUP install $source }?;
 
         // NOTE: Renaming is atomic on most platforms.
         // This also declares the successful end of the transaction.
-        fs::rename(&link_in_flight, &link).await?;
+        fs::rename(&link_in_flight, &link)?;
         Ok(())
     }
 }
 
 impl RmSubCmd {
-    async fn run(&self) -> Result<()> {
+    fn run(&self) -> Result<()> {
         unsafe { set_env_local() };
 
         let toolchain = qualify_with_target(&self.toolchain);
@@ -235,16 +235,18 @@ impl RmSubCmd {
 
         // TODO: Use juntion on Windows
         let link = LOCAL_RYNZLAND_HOME.join("toolchains").join(&*toolchain);
-        let link_target = fs::read_link(&link).await?;
+        let link_target = fs::read_link(&link)?;
         let underlying_toolchain = link_target.file_name().unwrap().to_string_lossy();
 
-        fs::remove_file(&link).await?;
+        fs::remove_file(&link)?;
 
-        // TODO: Extract the GC logic elsewhere; the GC should be guarded by a global lock.
+        // TODO: Extract the GC logic elsewhere; the GC should be guarded by a global
+        // lock.
         let mut referenced = false;
-        let mut walker = fs::read_dir(LOCAL_RYNZLAND_HOME.join("toolchains")).await?;
-        while let Some(entry) = walker.next_entry().await? {
-            let Ok(target) = fs::read_link(entry.path()).await else {
+        let walker = fs::read_dir(LOCAL_RYNZLAND_HOME.join("toolchains"))?;
+        for entry in walker {
+            let entry = entry?;
+            let Ok(target) = fs::read_link(entry.path()) else {
                 continue;
             };
             if target == link_target {
@@ -288,19 +290,21 @@ impl RunSubCmd {
 }
 
 impl NukeSubcmd {
-    async fn run(&self) -> Result<()> {
+    #[allow(clippy::unused_self)]
+    fn run(self) -> Result<()> {
         info!("nuking local rustup installation...");
 
-        let mut walker = fs::read_dir(&*LOCAL_HOME).await?;
-        while let Some(entry) = walker.next_entry().await? {
-            let file_type = entry.file_type().await?;
+        let walker = fs::read_dir(&*LOCAL_HOME)?;
+        for entry in walker {
+            let entry = entry?;
+            let file_type = entry.file_type()?;
             if file_type.is_symlink() || file_type.is_file() {
                 if entry.file_name() == ".gitkeep" {
                     continue;
                 }
-                fs::remove_file(entry.path()).await?;
+                fs::remove_file(entry.path())?;
             } else if file_type.is_dir() {
-                fs::remove_dir_all(entry.path()).await?;
+                fs::remove_dir_all(entry.path())?;
             }
         }
 
@@ -321,15 +325,15 @@ impl IdSubcmd {
 }
 
 impl IdChanSubcmd {
-    async fn run(&self) -> Result<()> {
+    fn run(&self) -> Result<()> {
         let temp_dir = tempfile::Builder::new().prefix("rynzland").tempdir()?;
         let temp_dir = temp_dir.path();
-        fs::create_dir_all(&temp_dir).await?;
+        fs::create_dir_all(temp_dir)?;
 
         let manifest_url = rustup::manifest_url(&self.channel);
         let manifest_path = temp_dir.join("multirust-channel-manifest.toml");
         info!("downloading manifest from {manifest_url}...");
-        util::download_file(&manifest_url, &manifest_path).await?;
+        util::download_file(&manifest_url, &manifest_path)?;
         let rust_ver = rust_ver_from_manifest(&manifest_path)?;
 
         let components = match &self.components[..] {

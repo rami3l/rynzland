@@ -1,7 +1,6 @@
-use std::{borrow::Cow, path::Path};
+use std::{borrow::Cow, fs::File, path::Path};
 
 use anyhow::Result;
-use tokio::{fs::File, io::AsyncWriteExt};
 
 pub const BUILD_TARGET: &str = env!("TARGET");
 
@@ -13,11 +12,11 @@ pub fn qualify_with_target(toolchain: &str) -> Cow<'_, str> {
     format!("{toolchain}{suffix}").into()
 }
 
-pub async fn download_file(url: &str, dest: &Path) -> Result<()> {
-    let resp = reqwest::get(url).await?;
-    let mut dest = File::create(dest).await?;
-    let bytes = resp.bytes().await?;
-    dest.write_all(&bytes).await?;
+pub fn download_file(url: &str, dest: &Path) -> Result<()> {
+    let mut resp = ureq::get(url).call()?;
+    let mut reader = resp.body_mut().as_reader();
+    let mut dest = File::create(dest)?;
+    std::io::copy(&mut reader, &mut dest)?;
     Ok(())
 }
 
