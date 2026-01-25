@@ -47,7 +47,7 @@ Some basic features that should be implemented include:
       components.
 - [ ] Identifying channels that can be updated.
 - [ ] Updating a given channel.
-  - [ ] ... to the same menifest, i.e. component addition or removal.
+  - [ ] ... to the same manifest, i.e. component addition or removal.
   - [ ] ... to a different manifest, i.e. minor or patch version update.
 
 [rustup#988]: https://github.com/rust-lang/rustup/issues/988
