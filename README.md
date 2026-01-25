@@ -42,13 +42,15 @@ Some basic features that should be implemented include:
 - [x] Initial setup for both instances.
 - [x] Installing a new toolchain.
 - [x] Removing an existing toolchain.
-- [ ] Garbage-collecting unreferenced toolchains in the pool.
-- [ ] Uniquely identifying toolchains in the pool based on version and
+- [x] Garbage-collecting unreferenced toolchains in the pool.
+- [x] Uniquely identifying toolchains in the pool based on version and
       components.
-- [ ] Identifying channels that can be updated.
+- [x] Identifying channels that can be updated.
 - [ ] Updating a given channel.
   - [ ] ... to the same manifest, i.e. component addition or removal.
-  - [ ] ... to a different manifest, i.e. minor or patch version update.
+  - [x] ... to a different manifest, i.e. minor or patch version update.
+- [ ] Achieve both Unix and Windows compatibility.
+- [ ] Verify the process safety of the new transaction system.
 
 [rustup#988]: https://github.com/rust-lang/rustup/issues/988
 [`rami3l/noife`]: https://github.com/rami3l/noife
