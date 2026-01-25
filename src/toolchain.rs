@@ -1,6 +1,7 @@
 use std::{
     borrow::ToOwned,
-    collections::BTreeSet,
+    collections::{BTreeSet, HashSet},
+    ffi::{OsStr, OsString},
     fs,
     hash::{Hash, Hasher},
     path::Path,
@@ -8,11 +9,12 @@ use std::{
 };
 
 use anyhow::{self, Context, Result};
+use cmd_lib::run_cmd;
 use tracing::info;
 use twox_hash::XxHash64;
 
 use crate::{
-    rustup,
+    LOCAL_RUSTUP, LOCAL_RYNZLAND_HOME, rustup, set_env_local,
     util::{self, HashEncoder, qualify_with_target},
 };
 
@@ -106,6 +108,55 @@ impl IdentifiableToolchain {
 
         id
     }
+}
+
+/// Garbage collect all toolchain links in [`LOCAL_RYNZLAND_HOME`] that are no longer
+/// referencing any of the given candidates.
+/// If candidates is `None`, then it defaults to all underlying toolchains.
+pub fn gc<S, I>(candidates: impl Into<Option<I>>) -> Result<()>
+where
+    S: AsRef<OsStr>,
+    I: IntoIterator<Item = S>,
+{
+    // TODO: Add an OS-global lock to avoid multiple GCs clashing with each other.
+    let candidates: Option<HashSet<_>> = candidates
+        .into()
+        .map(|cs| cs.into_iter().map(|it| it.as_ref().to_owned()).collect());
+    if candidates.as_ref().is_some_and(HashSet::is_empty) {
+        return Ok(());
+    }
+
+    unsafe { set_env_local() };
+
+    let mut referenced = HashSet::new();
+    let walker = fs::read_dir(LOCAL_RYNZLAND_HOME.join("toolchains"))?;
+    for entry in walker {
+        if let Ok(target) = fs::read_link(entry?.path())
+            && let Some(name) = target.file_name()
+        {
+            referenced.insert(name.to_owned());
+        }
+    }
+
+    let rm = |tc: &OsString| {
+        info!(
+            "underlying toolchain {} is no longer referenced, removing...",
+            tc.display()
+        );
+        run_cmd! { $LOCAL_RUSTUP uninstall $tc }
+    };
+
+    let Some(candidates) = &candidates else {
+        for tc in referenced {
+            rm(&tc)?;
+        }
+        return Ok(());
+    };
+
+    for tc in candidates.difference(&referenced) {
+        rm(tc)?;
+    }
+    Ok(())
 }
 
 pub fn rust_ver_from_manifest(manifest_path: &Path) -> Result<String> {

@@ -204,6 +204,10 @@ impl AddSubcmd {
         link_in_flight.set_extension("tmp");
         ofs::symlink(&relative_target, &link_in_flight)?;
 
+        // Save the original underlying toolchain for GC later.
+        let underlying = fs::read_link(&link).ok();
+        let underlying = underlying.as_ref().map(|it| it.file_name().unwrap());
+
         if src_with_id.exists() {
             info!("toolchain with id {id} already installed, skipping...");
         } else {
@@ -214,6 +218,10 @@ impl AddSubcmd {
         // NOTE: Renaming is atomic on most platforms.
         // This also declares the successful end of the transaction.
         fs::rename(&link_in_flight, &link)?;
+
+        if let Some(underlying) = underlying {
+            toolchain::gc([underlying])?;
+        }
         Ok(())
     }
 }
@@ -228,30 +236,10 @@ impl RmSubCmd {
         // TODO: Use juntion on Windows
         let link = LOCAL_RYNZLAND_HOME.join("toolchains").join(&*toolchain);
         let link_target = fs::read_link(&link)?;
-        let underlying = link_target.file_name().unwrap().to_string_lossy();
+        let underlying = link_target.file_name().unwrap();
 
         fs::remove_file(&link)?;
-
-        // TODO: Extract the GC logic elsewhere; the GC should be guarded by a global
-        // lock.
-        let mut referenced = false;
-        let walker = fs::read_dir(LOCAL_RYNZLAND_HOME.join("toolchains"))?;
-        for entry in walker {
-            let entry = entry?;
-            let Ok(target) = fs::read_link(entry.path()) else {
-                continue;
-            };
-            if target == link_target {
-                referenced = true;
-                break;
-            }
-        }
-        if !referenced {
-            info!("underlying toolchain {underlying} is no longer referenced, removing...");
-            run_cmd! { $LOCAL_RUSTUP uninstall $underlying }?;
-        }
-
-        Ok(())
+        toolchain::gc([underlying])
     }
 }
 

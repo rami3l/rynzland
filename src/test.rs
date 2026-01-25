@@ -161,3 +161,62 @@ fn toolchain_management() -> Result<()> {
     drop(ctx);
     Ok(())
 }
+
+#[test]
+#[serial]
+fn update_toolchain_gc() -> Result<()> {
+    let ctx = Ctx::setup()?;
+    let home = ctx.home();
+    let rynzland_home = home.join("rynzland_home");
+
+    let stable = "stable";
+    let v1 = "1.91.0";
+    let v2 = "1.92.0";
+
+    // Add stable from 1.91.0.
+    AddSubcmd {
+        toolchain: stable.into(),
+        source: Some(v1.into()),
+    }
+    .run()?;
+
+    let stable_link = rynzland_home
+        .join("toolchains")
+        .join(util::qualify_with_target(stable).as_ref());
+
+    let link_target_v1 = fs::read_link(&stable_link)?;
+    let underlying_v1 = if link_target_v1.is_relative() {
+        stable_link.parent().unwrap().join(&link_target_v1)
+    } else {
+        link_target_v1
+    };
+    assert!(underlying_v1.exists(), "v1 toolchain should exist");
+
+    // Update stable to 1.92.0.
+    AddSubcmd {
+        toolchain: stable.into(),
+        source: Some(v2.into()),
+    }
+    .run()?;
+
+    let link_target_v2 = fs::read_link(&stable_link)?;
+    let underlying_v2 = if link_target_v2.is_relative() {
+        stable_link.parent().unwrap().join(&link_target_v2)
+    } else {
+        link_target_v2
+    };
+
+    assert!(underlying_v2.exists(), "v2 toolchain should exist");
+    assert_ne!(
+        underlying_v1, underlying_v2,
+        "underlying toolchains should be different"
+    );
+
+    assert!(
+        !underlying_v1.exists(),
+        "v1 toolchain should have been GC'd"
+    );
+
+    drop(ctx);
+    Ok(())
+}
