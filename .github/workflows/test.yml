@@ -1,0 +1,38 @@
+name: test
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  rust:
+    strategy:
+      matrix:
+        os: 
+         - ubuntu-latest
+         - macos-latest
+         # TODO: Enable when Windows support is added
+         # - windows-latest
+
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: Swatinem/rust-cache@v2
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Test native build
+        run: cargo build --locked
+
+      - name: Run simple tests
+        run: cargo test --workspace
+
+      - name: Run heavy tests
+        run: cargo test --workspace -- --ignored
