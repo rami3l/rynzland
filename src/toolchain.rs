@@ -64,7 +64,7 @@ pub fn resolve_channel(channel: &str, components: &[String]) -> Result<Identifia
 }
 
 impl IdentifiableToolchain {
-    pub const SEED: u64 = 0xfeed_1ced_0d06_f00d;
+    pub const SEED: u64 = 0xfeed_c001_1ced_7ea5;
 
     pub fn new(toolchain: &Path) -> Result<Self> {
         let manifest_path = toolchain.join(*CHANNEL_MANIFEST_SUBPATH);
