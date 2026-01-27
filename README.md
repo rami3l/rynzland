@@ -33,9 +33,10 @@ hopefully address some long-standing issues regarding rustup's disk space usage.
 ## Checklist
 
 This new system is still a work in progress, and many details need to be sorted
-out. Currently, it is designed as simulating `rustup` wrapper that runs a single
-version-pinned `rustup` binary on two different instances of `$RUSTUP_HOME`, one
-for the pool and another for the proxies.
+out. Currently, it is designed as a `rustup` wrapper that simulates the behavior
+of a single `rustup` installation by running the same version-pinned `rustup`
+binary over two different instances of `$RUSTUP_HOME`, one for the pool and
+another for the proxies.
 
 Some basic features that should be implemented include:
 
@@ -49,8 +50,10 @@ Some basic features that should be implemented include:
 - [ ] Updating a given channel.
   - [ ] ... to the same manifest, i.e. component addition or removal.
   - [x] ... to a different manifest, i.e. minor or patch version update.
-- [ ] Achieve both Unix and Windows compatibility.
-- [ ] Verify the process safety of the new transaction system.
+- [ ] Achieving Windows compatibility.
+- [ ] Verifying the process safety of the new transaction system.
+  - [ ] ... when concurrently updating the same "upper" toolchain.
+  - [ ] ... when concurrently installing the same "lower" toolchain.
 
 [rustup#988]: https://github.com/rust-lang/rustup/issues/988
 [`rami3l/noife`]: https://github.com/rami3l/noife
