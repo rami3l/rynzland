@@ -110,8 +110,8 @@ impl IdentifiableToolchain {
     }
 }
 
-/// Garbage collect all toolchain links in [`LOCAL_RYNZLAND_HOME`] that are no longer
-/// referencing any of the given candidates.
+/// Garbage collect all toolchain links in [`LOCAL_RYNZLAND_HOME`] that are no
+/// longer referencing any of the given candidates.
 /// If candidates is `None`, then it defaults to all underlying toolchains.
 pub fn gc<S, I>(candidates: impl Into<Option<I>>) -> Result<()>
 where

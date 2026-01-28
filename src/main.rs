@@ -20,6 +20,8 @@ fn main() -> Result<()> {
         RynzlandSubcmd::Nuke(nuke) => nuke.run()?,
         RynzlandSubcmd::Id(id) => id.run()?,
         RynzlandSubcmd::IdChan(id_chan) => id_chan.run()?,
+        RynzlandSubcmd::CompAdd(comp_add) => comp_add.run()?,
+        RynzlandSubcmd::CompRm(comp_rm) => comp_rm.run()?,
     }
 
     Ok(())

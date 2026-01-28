@@ -38,6 +38,34 @@ pub enum RynzlandSubcmd {
     Nuke(NukeSubcmd),
     Id(IdSubcmd),
     IdChan(IdChanSubcmd),
+    CompAdd(CompAddSubcmd),
+    CompRm(CompRmSubcmd),
+}
+
+/// add components to a toolchain
+#[derive(FromArgs, Clone, PartialEq, Eq, Debug)]
+#[argh(subcommand, name = "comp-add")]
+pub struct CompAddSubcmd {
+    /// the toolchain to modify
+    #[argh(positional)]
+    toolchain: String,
+
+    /// the components to add
+    #[argh(positional)]
+    components: Vec<String>,
+}
+
+/// remove components from a toolchain
+#[derive(FromArgs, Clone, PartialEq, Eq, Debug)]
+#[argh(subcommand, name = "comp-rm")]
+pub struct CompRmSubcmd {
+    /// the toolchain to modify
+    #[argh(positional)]
+    toolchain: String,
+
+    /// the components to remove
+    #[argh(positional)]
+    components: Vec<String>,
 }
 
 /// set up a local rustup installation
@@ -200,8 +228,7 @@ impl AddSubcmd {
 
         // NOTE: We create the in-flight link first to declare the beginning of the
         // transaction of the `link` toolchain creation.
-        let mut link_in_flight = link.clone();
-        link_in_flight.set_extension("tmp");
+        let link_in_flight = util::with_tmp(&link);
         ofs::symlink(&relative_target, &link_in_flight)?;
 
         // Save the original underlying toolchain for GC later.
@@ -308,4 +335,88 @@ impl IdChanSubcmd {
         println!("{}", id_toolchain.id());
         Ok(())
     }
+}
+
+impl CompAddSubcmd {
+    pub fn run(&self) -> Result<()> {
+        modify_components(&self.toolchain, &self.components, true)
+    }
+}
+
+impl CompRmSubcmd {
+    pub fn run(&self) -> Result<()> {
+        modify_components(&self.toolchain, &self.components, false)
+    }
+}
+
+fn modify_components(toolchain: &str, comps: &[String], add: bool) -> Result<()> {
+    if comps.is_empty() {
+        info!("no components specified, skipping...");
+        return Ok(());
+    }
+
+    unsafe { set_env_local() };
+
+    let toolchain = qualify_with_target(toolchain);
+    let link = LOCAL_RYNZLAND_HOME.join("toolchains").join(&*toolchain);
+
+    let underlying_path = fs::canonicalize(&link)?;
+    let mut underlying = IdentifiableToolchain::new(&underlying_path)?;
+
+    for comp in comps {
+        let comp = util::qualify_with_target(comp);
+        if add {
+            underlying.components.insert(comp.into_owned());
+        } else {
+            underlying.components.remove(&*comp);
+        }
+    }
+
+    let old_id = underlying_path.file_name().unwrap();
+    let new_id = underlying.id();
+
+    let new_toolchain_dir = LOCAL_RUSTUP_HOME.join("toolchains").join(&new_id);
+    let relative_target =
+        diff_paths(&new_toolchain_dir, link.parent().unwrap()).context("malformed FS link path")?;
+
+    // NOTE: We create the in-flight link first to declare the beginning of the
+    // transaction of the `link` toolchain creation.
+    let link_in_flight = util::with_tmp(&link);
+    ofs::symlink(&relative_target, &link_in_flight)?;
+
+    if new_toolchain_dir.exists() {
+        info!("toolchain with id {new_id} already exists, switching...");
+    } else {
+        info!("creating toolchain {new_id}...");
+        let tmp_dir = util::with_tmp(&new_toolchain_dir);
+
+        info!(
+            "cloning {} into {}...",
+            underlying_path.display(),
+            tmp_dir.display()
+        );
+
+        // NOTE: This will likely error out if the underlying toolchain exists, because
+        // the first `fs::create_dir()` will fail in the first place.
+        util::copy_dir_all(&underlying_path, &tmp_dir)?;
+
+        let op = if add { "add" } else { "remove" };
+
+        // HACK: We will have to make rustup think that `toolchain_name` is an official
+        // toolchain, so it has to use an official name. This logic shouldn't
+        // exist in the final version. Anyway, following the current naming scheme, a
+        // toolchain in the pool can never have the name `"stable-<host>"`, so it's fine.
+        let toolchain_name = util::qualify_with_target("stable");
+        let hack_link = tmp_dir.parent().unwrap().join(toolchain_name.as_ref());
+        ofs::symlink(tmp_dir.file_name().unwrap(), &hack_link)?;
+        run_cmd! { RUSTUP_TOOLCHAIN=$toolchain_name $LOCAL_RUSTUP component $op $[comps] }?;
+        fs::remove_file(&hack_link)?;
+
+        fs::rename(&tmp_dir, &new_toolchain_dir)?;
+    }
+
+    // NOTE: Renaming is atomic on most platforms.
+    // This also declares the successful end of the transaction.
+    fs::rename(&link_in_flight, &link)?;
+    toolchain::gc([old_id])
 }

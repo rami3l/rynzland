@@ -1,4 +1,9 @@
-use std::{borrow::Cow, fs::File, path::Path};
+use std::{
+    borrow::Cow,
+    fs::{self, File},
+    io,
+    path::{Path, PathBuf},
+};
 
 use anyhow::Result;
 
@@ -18,6 +23,27 @@ pub fn download_file(url: &str, dest: &Path) -> Result<()> {
     let mut dest = File::create(dest)?;
     std::io::copy(&mut reader, &mut dest)?;
     Ok(())
+}
+
+// https://stackoverflow.com/a/65192210
+pub fn copy_dir_all(src: impl AsRef<Path>, dst: impl AsRef<Path>) -> io::Result<()> {
+    fs::create_dir(&dst)?;
+    for entry in fs::read_dir(src)? {
+        let entry = entry?;
+        let ty = entry.file_type()?;
+        if ty.is_dir() {
+            copy_dir_all(entry.path(), dst.as_ref().join(entry.file_name()))?;
+        } else {
+            fs::copy(entry.path(), dst.as_ref().join(entry.file_name()))?;
+        }
+    }
+    Ok(())
+}
+
+pub fn with_tmp(path: &Path) -> PathBuf {
+    let mut path = path.as_os_str().to_owned();
+    path.push(".tmp");
+    path.into()
 }
 
 pub struct HashEncoder;

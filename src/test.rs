@@ -220,3 +220,85 @@ fn update_toolchain_gc() -> Result<()> {
     drop(ctx);
     Ok(())
 }
+
+#[test]
+#[serial]
+fn comp_add_rm() -> Result<()> {
+    let ctx = Ctx::setup()?;
+    let home = ctx.home();
+    let rynzland_home = home.join("rynzland_home");
+
+    let toolchain_name = "1.78";
+
+    // Add stable toolchain
+    AddSubcmd {
+        toolchain: toolchain_name.into(),
+        source: None,
+    }
+    .run()?;
+
+    let link_path = rynzland_home
+        .join("toolchains")
+        .join(util::qualify_with_target(toolchain_name).as_ref());
+
+    let resolve_underlying = |path: &std::path::Path| -> Result<std::path::PathBuf> {
+        let link_target = fs::read_link(path)?;
+        if link_target.is_relative() {
+            Ok(path.parent().unwrap().join(link_target))
+        } else {
+            Ok(link_target)
+        }
+    };
+
+    let underlying_1 = resolve_underlying(&link_path)?;
+    assert!(underlying_1.exists(), "Underlying toolchain 1 should exist");
+
+    // Cargo bin path in underlying toolchain
+    let cargo_bin_1 = underlying_1.join("bin").join("cargo");
+    assert!(cargo_bin_1.exists(), "Cargo should exist initially");
+
+    // Remove cargo
+    CompRmSubcmd {
+        toolchain: toolchain_name.into(),
+        components: vec!["cargo".into()],
+    }
+    .run()?;
+
+    let underlying_2 = resolve_underlying(&link_path)?;
+    assert_ne!(
+        underlying_1, underlying_2,
+        "Should point to new underlying toolchain"
+    );
+
+    assert!(!underlying_1.exists(), "Old toolchain should be GC'd");
+    assert!(underlying_2.exists(), "New toolchain should exist");
+
+    let cargo_bin_2 = underlying_2.join("bin").join("cargo");
+    assert!(
+        !cargo_bin_2.exists(),
+        "Cargo should be gone in new toolchain"
+    );
+
+    // Add cargo back
+    CompAddSubcmd {
+        toolchain: toolchain_name.into(),
+        components: vec!["cargo".into()],
+    }
+    .run()?;
+
+    let underlying_3 = resolve_underlying(&link_path)?;
+    // underlying_2 should be gone
+    assert!(!underlying_2.exists(), "Second toolchain should be GC'd");
+    assert!(underlying_3.exists(), "Third toolchain should exist");
+
+    let cargo_bin_3 = underlying_3.join("bin").join("cargo");
+    assert!(cargo_bin_3.exists(), "Cargo should be back");
+
+    assert_eq!(
+        underlying_1, underlying_3,
+        "Should return to original toolchain ID/path"
+    );
+
+    drop(ctx);
+    Ok(())
+}
