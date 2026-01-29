@@ -1,15 +1,13 @@
 use std::{
     borrow::Cow,
     env, fs, iter,
-    os::unix::fs as ofs,
     path::{Path, PathBuf},
     sync::LazyLock,
 };
 
-use anyhow::{Context, Result};
+use anyhow::Result;
 use argh::FromArgs;
 use cmd_lib::run_cmd;
-use pathdiff::diff_paths;
 use tracing::info;
 
 use crate::{toolchain::IdentifiableToolchain, util::qualify_with_target};
@@ -170,7 +168,6 @@ impl SetupSubcmd {
             info!("setting up rustup...");
             rustup::setup(&LOCAL_RUSTUP)?;
         }
-        // TODO: Use hardlink as a fallback on Windows
         info!("setting up FS link to local rustup...");
         let local_cargo_bin = LOCAL_CARGO_HOME.join("bin");
 
@@ -184,9 +181,11 @@ impl SetupSubcmd {
 
         let local_rustup_link = local_cargo_bin.join("rustup");
         if !local_rustup_link.try_exists()? {
-            let relative_target =
-                diff_paths(&*LOCAL_RUSTUP, local_cargo_bin).context("malformed FS link path")?;
-            ofs::symlink(&relative_target, &local_rustup_link)?;
+            #[cfg(unix)]
+            util::soft_link(&LOCAL_RUSTUP, &local_rustup_link)?;
+
+            #[cfg(windows)]
+            fs::hard_link(&*LOCAL_RUSTUP, &local_rustup_link)?;
         }
 
         for home in [&*LOCAL_RUSTUP_HOME, &*LOCAL_RYNZLAND_HOME] {
@@ -223,16 +222,14 @@ impl AddSubcmd {
         let src_old = LOCAL_RUSTUP_HOME.join("toolchains").join(&*src);
         let src_with_id = LOCAL_RUSTUP_HOME.join("toolchains").join(&id);
         let link = LOCAL_RYNZLAND_HOME.join("toolchains").join(&*toolchain);
-        let relative_target =
-            diff_paths(&src_with_id, link.parent().unwrap()).context("malformed FS link path")?;
 
         // NOTE: We create the in-flight link first to declare the beginning of the
         // transaction of the `link` toolchain creation.
         let link_in_flight = util::with_tmp(&link);
-        ofs::symlink(&relative_target, &link_in_flight)?;
+        util::soft_link(&src_with_id, &link_in_flight)?;
 
         // Save the original underlying toolchain for GC later.
-        let underlying = fs::read_link(&link).ok();
+        let underlying = util::soft_link_target(&link).ok();
         let underlying = underlying.as_ref().map(|it| it.file_name().unwrap());
 
         if src_with_id.exists() {
@@ -260,12 +257,11 @@ impl RmSubCmd {
         let toolchain = qualify_with_target(&self.toolchain);
         info!("removing toolchain: {toolchain}");
 
-        // TODO: Use juntion on Windows
         let link = LOCAL_RYNZLAND_HOME.join("toolchains").join(&*toolchain);
-        let link_target = fs::read_link(&link)?;
+        let link_target = util::soft_link_target(&link)?;
         let underlying = link_target.file_name().unwrap();
 
-        fs::remove_file(&link)?;
+        util::soft_unlink(&link)?;
         toolchain::gc([underlying])
     }
 }
@@ -376,13 +372,11 @@ fn modify_components(toolchain: &str, comps: &[String], add: bool) -> Result<()>
     let new_id = underlying.id();
 
     let new_toolchain_dir = LOCAL_RUSTUP_HOME.join("toolchains").join(&new_id);
-    let relative_target =
-        diff_paths(&new_toolchain_dir, link.parent().unwrap()).context("malformed FS link path")?;
 
     // NOTE: We create the in-flight link first to declare the beginning of the
     // transaction of the `link` toolchain creation.
     let link_in_flight = util::with_tmp(&link);
-    ofs::symlink(&relative_target, &link_in_flight)?;
+    util::soft_link(&new_toolchain_dir, &link_in_flight)?;
 
     if new_toolchain_dir.exists() {
         info!("toolchain with id {new_id} already exists, switching...");
@@ -408,9 +402,9 @@ fn modify_components(toolchain: &str, comps: &[String], add: bool) -> Result<()>
         // toolchain in the pool can never have the name `"stable-<host>"`, so it's fine.
         let toolchain_name = util::qualify_with_target("stable");
         let hack_link = tmp_dir.parent().unwrap().join(toolchain_name.as_ref());
-        ofs::symlink(tmp_dir.file_name().unwrap(), &hack_link)?;
+        util::soft_link(&tmp_dir, &hack_link)?;
         run_cmd! { RUSTUP_TOOLCHAIN=$toolchain_name $LOCAL_RUSTUP component $op $[comps] }?;
-        fs::remove_file(&hack_link)?;
+        util::soft_unlink(&hack_link)?;
 
         fs::rename(&tmp_dir, &new_toolchain_dir)?;
     }

@@ -48,6 +48,49 @@ pub fn with_tmp(path: &Path) -> PathBuf {
 
 pub struct HashEncoder;
 
+/// Creates a soft link from `link` to `original` (symlink on Unix, junction on Windows).
+/// Both paths are expected to be absolute.
+pub fn soft_link(original: &Path, link: &Path) -> Result<()> {
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs as ofs;
+
+        use anyhow::Context;
+        use pathdiff::diff_paths;
+
+        let rel_target =
+            diff_paths(original, link.parent().unwrap()).context("malformed FS link path")?;
+        ofs::symlink(&rel_target, link)?;
+    }
+
+    #[cfg(windows)]
+    junction::create(original, link)?;
+
+    Ok(())
+}
+
+pub fn soft_link_target(path: impl AsRef<Path>) -> Result<PathBuf> {
+    let path = path.as_ref();
+
+    #[cfg(unix)]
+    let target = fs::read_link(path)?;
+
+    #[cfg(windows)]
+    let target = junction::get_target(path)?;
+
+    Ok(target)
+}
+
+pub fn soft_unlink(path: &Path) -> Result<()> {
+    #[cfg(unix)]
+    fs::remove_file(path)?;
+
+    #[cfg(windows)]
+    fs::remove_dir(path)?;
+
+    Ok(())
+}
+
 impl HashEncoder {
     pub const ALPHABET: [u8; 32] = *b"0123456789abcdefhjkmnqprstuvwxyz";
 

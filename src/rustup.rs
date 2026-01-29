@@ -1,4 +1,4 @@
-use std::{env::consts::EXE_SUFFIX, fs, path::Path};
+use std::{env::consts::EXE_SUFFIX, path::Path};
 
 use anyhow::Result;
 
@@ -25,7 +25,7 @@ pub fn setup(dest: &Path) -> Result<()> {
 
     #[cfg(unix)]
     {
-        use std::os::unix::fs::PermissionsExt;
+        use std::{fs, os::unix::fs::PermissionsExt};
 
         let mut perms = fs::metadata(dest)?.permissions();
         // read/write/execute for owner

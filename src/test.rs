@@ -92,7 +92,7 @@ fn toolchain_management() -> Result<()> {
     // Check underlying toolchain in rustup_home.
     // `link_target` should be relative or absolute path to
     // `rustup_home/toolchains/<id>`.
-    let link_target = fs::read_link(&tc_link)?;
+    let link_target = util::soft_link_target(&tc_link)?;
     let underlying_path = if link_target.is_relative() {
         tc_link.parent().unwrap().join(link_target)
     } else {
@@ -123,7 +123,7 @@ fn toolchain_management() -> Result<()> {
         .join("toolchains")
         .join(util::qualify_with_target(chan).as_ref());
     assert!(chan_link.exists());
-    let chan_target = fs::read_link(&chan_link)?;
+    let chan_target = util::soft_link_target(&chan_link)?;
     let chan_underlying = if chan_target.is_relative() {
         chan_link.parent().unwrap().join(chan_target)
     } else {
@@ -184,7 +184,7 @@ fn update_toolchain_gc() -> Result<()> {
         .join("toolchains")
         .join(util::qualify_with_target(stable).as_ref());
 
-    let link_target_v1 = fs::read_link(&stable_link)?;
+    let link_target_v1 = util::soft_link_target(&stable_link)?;
     let underlying_v1 = if link_target_v1.is_relative() {
         stable_link.parent().unwrap().join(&link_target_v1)
     } else {
@@ -199,7 +199,7 @@ fn update_toolchain_gc() -> Result<()> {
     }
     .run()?;
 
-    let link_target_v2 = fs::read_link(&stable_link)?;
+    let link_target_v2 = util::soft_link_target(&stable_link)?;
     let underlying_v2 = if link_target_v2.is_relative() {
         stable_link.parent().unwrap().join(&link_target_v2)
     } else {
@@ -242,7 +242,7 @@ fn comp_add_rm() -> Result<()> {
         .join(util::qualify_with_target(toolchain_name).as_ref());
 
     let resolve_underlying = |path: &std::path::Path| -> Result<std::path::PathBuf> {
-        let link_target = fs::read_link(path)?;
+        let link_target = util::soft_link_target(path)?;
         if link_target.is_relative() {
             Ok(path.parent().unwrap().join(link_target))
         } else {
@@ -253,8 +253,10 @@ fn comp_add_rm() -> Result<()> {
     let underlying_1 = resolve_underlying(&link_path)?;
     assert!(underlying_1.exists(), "Underlying toolchain 1 should exist");
 
+    let cargo_name = format!("cargo{}", std::env::consts::EXE_SUFFIX);
+
     // Cargo bin path in underlying toolchain
-    let cargo_bin_1 = underlying_1.join("bin").join("cargo");
+    let cargo_bin_1 = underlying_1.join("bin").join(&cargo_name);
     assert!(cargo_bin_1.exists(), "Cargo should exist initially");
 
     // Remove cargo
@@ -273,7 +275,7 @@ fn comp_add_rm() -> Result<()> {
     assert!(!underlying_1.exists(), "Old toolchain should be GC'd");
     assert!(underlying_2.exists(), "New toolchain should exist");
 
-    let cargo_bin_2 = underlying_2.join("bin").join("cargo");
+    let cargo_bin_2 = underlying_2.join("bin").join(&cargo_name);
     assert!(
         !cargo_bin_2.exists(),
         "Cargo should be gone in new toolchain"
@@ -291,7 +293,7 @@ fn comp_add_rm() -> Result<()> {
     assert!(!underlying_2.exists(), "Second toolchain should be GC'd");
     assert!(underlying_3.exists(), "Third toolchain should exist");
 
-    let cargo_bin_3 = underlying_3.join("bin").join("cargo");
+    let cargo_bin_3 = underlying_3.join("bin").join(&cargo_name);
     assert!(cargo_bin_3.exists(), "Cargo should be back");
 
     assert_eq!(
