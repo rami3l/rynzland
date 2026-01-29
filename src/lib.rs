@@ -401,7 +401,7 @@ fn modify_components(toolchain: &str, comps: &[String], add: bool) -> Result<()>
         // exist in the final version. Anyway, following the current naming scheme, a
         // toolchain in the pool can never have the name `"stable-<host>"`, so it's fine.
         let toolchain_name = util::qualify_with_target("stable");
-        let hack_link = tmp_dir.parent().unwrap().join(toolchain_name.as_ref());
+        let hack_link = tmp_dir.with_file_name(toolchain_name.as_ref());
         util::soft_link(&tmp_dir, &hack_link)?;
         run_cmd! { RUSTUP_TOOLCHAIN=$toolchain_name $LOCAL_RUSTUP component $op $[comps] }?;
         util::soft_unlink(&hack_link)?;

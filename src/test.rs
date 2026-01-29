@@ -94,7 +94,7 @@ fn toolchain_management() -> Result<()> {
     // `rustup_home/toolchains/<id>`.
     let link_target = util::soft_link_target(&tc_link)?;
     let underlying_path = if link_target.is_relative() {
-        tc_link.parent().unwrap().join(link_target)
+        tc_link.with_file_name(link_target)
     } else {
         link_target
     };
@@ -125,7 +125,7 @@ fn toolchain_management() -> Result<()> {
     assert!(chan_link.exists());
     let chan_target = util::soft_link_target(&chan_link)?;
     let chan_underlying = if chan_target.is_relative() {
-        chan_link.parent().unwrap().join(chan_target)
+        chan_link.with_file_name(chan_target)
     } else {
         chan_target
     };
@@ -186,7 +186,7 @@ fn update_toolchain_gc() -> Result<()> {
 
     let link_target_v1 = util::soft_link_target(&stable_link)?;
     let underlying_v1 = if link_target_v1.is_relative() {
-        stable_link.parent().unwrap().join(&link_target_v1)
+        stable_link.with_file_name(&link_target_v1)
     } else {
         link_target_v1
     };
@@ -201,7 +201,7 @@ fn update_toolchain_gc() -> Result<()> {
 
     let link_target_v2 = util::soft_link_target(&stable_link)?;
     let underlying_v2 = if link_target_v2.is_relative() {
-        stable_link.parent().unwrap().join(&link_target_v2)
+        stable_link.with_file_name(&link_target_v2)
     } else {
         link_target_v2
     };
@@ -244,7 +244,7 @@ fn comp_add_rm() -> Result<()> {
     let resolve_underlying = |path: &std::path::Path| -> Result<std::path::PathBuf> {
         let link_target = util::soft_link_target(path)?;
         if link_target.is_relative() {
-            Ok(path.parent().unwrap().join(link_target))
+            Ok(path.with_file_name(link_target))
         } else {
             Ok(link_target)
         }
