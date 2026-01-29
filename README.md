@@ -50,7 +50,7 @@ Some basic features that should be implemented include:
 - [x] Updating a given channel.
   - [x] ... to the same manifest, i.e. component addition or removal.
   - [x] ... to a different manifest, i.e. minor or patch version update.
-- [ ] Achieving Windows compatibility.
+- [x] Achieving Windows compatibility.
 - [ ] Verifying the process safety of the new transaction system.
   - [ ] ... when concurrently updating the same "upper" toolchain.
   - [ ] ... when concurrently installing the same "lower" toolchain.
