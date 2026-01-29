@@ -189,9 +189,9 @@ impl SetupSubcmd {
             ofs::symlink(&relative_target, &local_rustup_link)?;
         }
 
-        run_cmd! { $LOCAL_RUSTUP --version }?;
         for home in [&*LOCAL_RUSTUP_HOME, &*LOCAL_RYNZLAND_HOME] {
             run_cmd! { RUSTUP_HOME=$home $LOCAL_RUSTUP set profile minimal }?;
+            run_cmd! { RUSTUP_HOME=$home $LOCAL_RUSTUP set auto-install disable }?;
             run_cmd! { RUSTUP_HOME=$home $LOCAL_RUSTUP set auto-self-update disable }?;
         }
         Ok(())
