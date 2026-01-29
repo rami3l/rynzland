@@ -129,7 +129,7 @@ where
     unsafe { set_env_local() };
 
     let mut referenced = HashSet::new();
-    let walker = fs::read_dir(LOCAL_RYNZLAND_HOME.join("toolchains"))?;
+    let walker = LOCAL_RYNZLAND_HOME.join("toolchains").read_dir()?;
     for entry in walker {
         if let Ok(target) = util::soft_link_target(entry?.path())
             && let Some(name) = target.file_name()

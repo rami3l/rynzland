@@ -295,7 +295,7 @@ impl NukeSubcmd {
     pub fn run(self) -> Result<()> {
         info!("nuking local rustup installation...");
 
-        let walker = fs::read_dir(*LOCAL_HOME)?;
+        let walker = LOCAL_HOME.read_dir()?;
         for entry in walker {
             let entry = entry?;
             let file_type = entry.file_type()?;
@@ -356,7 +356,7 @@ fn modify_components(toolchain: &str, comps: &[String], add: bool) -> Result<()>
     let toolchain = qualify_with_target(toolchain);
     let link = LOCAL_RYNZLAND_HOME.join("toolchains").join(&*toolchain);
 
-    let underlying_path = fs::canonicalize(&link)?;
+    let underlying_path = link.canonicalize()?;
     let mut underlying = IdentifiableToolchain::new(&underlying_path)?;
 
     for comp in comps {

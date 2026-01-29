@@ -27,7 +27,7 @@ pub fn setup(dest: &Path) -> Result<()> {
     {
         use std::{fs, os::unix::fs::PermissionsExt};
 
-        let mut perms = fs::metadata(dest)?.permissions();
+        let mut perms = dest.metadata()?.permissions();
         // read/write/execute for owner
         perms.set_mode(0o755);
         fs::set_permissions(dest, perms)?;

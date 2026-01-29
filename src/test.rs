@@ -27,7 +27,7 @@ fn setup_and_nuke() -> Result<()> {
     NukeSubcmd {}.run()?;
 
     // The home dir should be empty again.
-    let entries: Vec<_> = fs::read_dir(&home)?.collect();
+    let entries: Vec<_> = home.read_dir()?.collect();
     assert!(entries.is_empty(), "home dir not empty: {entries:#?}");
 
     drop(ctx);
@@ -130,8 +130,8 @@ fn toolchain_management() -> Result<()> {
         chan_target
     };
     assert_eq!(
-        fs::canonicalize(&underlying_path)?,
-        fs::canonicalize(&chan_underlying)?,
+        underlying_path.canonicalize()?,
+        chan_underlying.canonicalize()?,
         "underlying toolchain should be reused",
     );
 
