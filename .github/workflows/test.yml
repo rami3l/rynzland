@@ -17,8 +17,7 @@ jobs:
         os:
           - ubuntu-latest
           - macos-latest
-          # TODO: Enable when Windows support is added
-          # - windows-latest
+          - windows-latest
 
     runs-on: ${{ matrix.os }}
 
