@@ -47,8 +47,8 @@ Some basic features that should be implemented include:
 - [x] Uniquely identifying toolchains in the pool based on version and
       components.
 - [x] Identifying channels that can be updated.
-- [ ] Updating a given channel.
-  - [ ] ... to the same manifest, i.e. component addition or removal.
+- [x] Updating a given channel.
+  - [x] ... to the same manifest, i.e. component addition or removal.
   - [x] ... to a different manifest, i.e. minor or patch version update.
 - [ ] Achieving Windows compatibility.
 - [ ] Verifying the process safety of the new transaction system.
