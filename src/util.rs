@@ -105,6 +105,21 @@ mod tests {
 
     #[test]
     fn hash_encode() {
-        assert_eq!(HashEncoder::encode(112_358_777), "7kxdk0s000000");
+        let original = [1, 112_358_777, 1_618_033_988, 2_718_281_828, u64::MAX];
+        let encoded = original.map(HashEncoder::encode);
+        assert_eq!(
+            encoded,
+            [
+                "200000000000",
+                "7kxdk0s000000",
+                "48fbjc0000000",
+                "69c05n8000000",
+                "fzzzzzzzzzzzz"
+            ]
+        );
+        assert_eq!(
+            encoded.iter().map(String::len).collect::<Vec<_>>(),
+            [12, 13, 13, 13, 13]
+        );
     }
 }
