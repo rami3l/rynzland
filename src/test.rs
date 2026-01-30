@@ -1,7 +1,6 @@
 mod prelude;
 
 use prelude::*;
-use serial_test::serial;
 
 use crate::{
     AddSubcmd, CompAddSubcmd, CompRmSubcmd, NukeSubcmd, Result, RmSubCmd,
@@ -10,7 +9,6 @@ use crate::{
 };
 
 #[test]
-#[serial]
 fn setup_and_nuke() -> Result<()> {
     let ctx = Ctx::setup()?;
     let home = ctx.home();
@@ -38,7 +36,6 @@ fn setup_and_nuke() -> Result<()> {
 }
 
 #[test]
-#[serial]
 fn toolchain_id() -> Result<()> {
     let ctx = Ctx::setup()?;
     let home = ctx.home();
@@ -70,7 +67,6 @@ fn toolchain_id() -> Result<()> {
 }
 
 #[test]
-#[serial]
 fn toolchain_management() -> Result<()> {
     let ctx = Ctx::setup()?;
     let home = ctx.home();
@@ -166,7 +162,6 @@ fn toolchain_management() -> Result<()> {
 }
 
 #[test]
-#[serial]
 fn update_toolchain_gc() -> Result<()> {
     let ctx = Ctx::setup()?;
     let home = ctx.home();
@@ -225,7 +220,6 @@ fn update_toolchain_gc() -> Result<()> {
 }
 
 #[test]
-#[serial]
 fn comp_add_rm() -> Result<()> {
     let ctx = Ctx::setup()?;
     let home = ctx.home();

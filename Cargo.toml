@@ -35,6 +35,3 @@ pedantic = "warn"
 todo = "warn"
 missing_errors_doc = { level = "allow", priority = 1 }
 missing_panics_doc = { level = "allow", priority = 1 }
-
-[dev-dependencies]
-serial_test = "3.3.1"
