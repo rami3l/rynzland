@@ -1,5 +1,8 @@
 # Rynzland
 
+> To my friend @lynzrand with whom I have shared many crazy ideas and, more
+> importantly, the bittersweet memories of 2025 in the city of Shenzhen.
+
 This is another playground for me to tinker with ideas of addressing the
 (in)famous [rustup#988].
 
