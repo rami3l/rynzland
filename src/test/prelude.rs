@@ -5,11 +5,10 @@ use std::{
 
 use anyhow::Result;
 
-use crate::SetupSubcmd;
+use crate::{Ctx as AppCtx, SetupSubcmd};
 
 pub struct Ctx {
     tempdir: tempfile::TempDir,
-    _cwd: CwdCtx,
 }
 
 impl Ctx {
@@ -19,16 +18,13 @@ impl Ctx {
         let tempdir_path = tempdir.path();
         fs::create_dir_all(tempdir_path.join("home"))?;
 
-        Ok(Self {
-            _cwd: CwdCtx::new(tempdir_path)?,
-            tempdir,
-        })
+        Ok(Self { tempdir })
     }
 
     /// Like [`Self::new`], but also runs setup.
     pub fn setup() -> Result<Self> {
         let ctx = Self::new()?;
-        SetupSubcmd {}.run()?;
+        SetupSubcmd {}.run(&ctx.app_ctx())?;
         Ok(ctx)
     }
 
@@ -39,23 +35,8 @@ impl Ctx {
     pub fn home(&self) -> PathBuf {
         self.dir().join("home")
     }
-}
 
-struct CwdCtx {
-    old_cwd: Option<PathBuf>,
-}
-
-impl CwdCtx {
-    fn new(cwd: &Path) -> Result<Self> {
-        let old_cwd = std::env::current_dir().ok();
-        std::env::set_current_dir(cwd)?;
-        Ok(Self { old_cwd })
-    }
-}
-
-impl Drop for CwdCtx {
-    fn drop(&mut self) {
-        let Some(old_cwd) = &self.old_cwd else { return };
-        _ = std::env::set_current_dir(old_cwd);
+    pub fn app_ctx(&self) -> AppCtx {
+        AppCtx::new(self.home())
     }
 }

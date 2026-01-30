@@ -14,7 +14,7 @@ use tracing::info;
 use twox_hash::XxHash64;
 
 use crate::{
-    LOCAL_RUSTUP, LOCAL_RYNZLAND_HOME, rustup, set_env_local,
+    Ctx, rustup,
     util::{self, CommandExt, HashEncoder, qualify_with_target},
 };
 
@@ -110,10 +110,11 @@ impl IdentifiableToolchain {
     }
 }
 
-/// Garbage collect all toolchain links in [`LOCAL_RYNZLAND_HOME`] that are no
-/// longer referencing any of the given candidates.
-/// If candidates is `None`, then it defaults to all underlying toolchains.
-pub fn gc<S, I>(candidates: impl Into<Option<I>>) -> Result<()>
+/// Garbage collect all toolchain links in the directory specified by
+/// `ctx.rynzland_home` that are no longer referencing any of the given
+/// candidates. If `candidates` is `None`, then it defaults to all underlying
+/// toolchains.
+pub fn gc<S, I>(ctx: &Ctx, candidates: impl Into<Option<I>>) -> Result<()>
 where
     S: AsRef<OsStr>,
     I: IntoIterator<Item = S>,
@@ -126,10 +127,8 @@ where
         return Ok(());
     }
 
-    unsafe { set_env_local() };
-
     let mut referenced = HashSet::new();
-    let walker = LOCAL_RYNZLAND_HOME.join("toolchains").read_dir()?;
+    let walker = ctx.rynzland_home.join("toolchains").read_dir()?;
     for entry in walker {
         if let Ok(target) = util::soft_link_target(entry?.path())
             && let Some(name) = target.file_name()
@@ -143,7 +142,7 @@ where
             "underlying toolchain {} is no longer referenced, removing...",
             tc.display(),
         );
-        Command::new(&*LOCAL_RUSTUP)
+        ctx.set_env_local(&mut Command::new(&ctx.rustup))
             .arg("uninstall")
             .arg(tc)
             .run_checked()

@@ -3,8 +3,11 @@ mod prelude;
 use prelude::*;
 use serial_test::serial;
 
-use super::*;
-use crate::{toolchain, toolchain::IdentifiableToolchain};
+use crate::{
+    AddSubcmd, CompAddSubcmd, CompRmSubcmd, NukeSubcmd, Result, RmSubCmd,
+    toolchain::{self, IdentifiableToolchain},
+    util,
+};
 
 #[test]
 #[serial]
@@ -24,7 +27,7 @@ fn setup_and_nuke() -> Result<()> {
     let rynzland_settings_path = home.join("rynzland_home").join("settings.toml");
     assert!(rynzland_settings_path.try_exists()?);
 
-    NukeSubcmd {}.run()?;
+    NukeSubcmd {}.run(&ctx.app_ctx())?;
 
     // The home dir should be empty again.
     let entries: Vec<_> = home.read_dir()?.collect();
@@ -50,7 +53,7 @@ fn toolchain_id() -> Result<()> {
         toolchain: minor.into(),
         source: None,
     }
-    .run()?;
+    .run(&ctx.app_ctx())?;
 
     let tc_path = rynzland_home
         .join("toolchains")
@@ -82,7 +85,7 @@ fn toolchain_management() -> Result<()> {
         toolchain: ver.into(),
         source: None,
     }
-    .run()?;
+    .run(&ctx.app_ctx())?;
 
     let tc_link = rynzland_home
         .join("toolchains")
@@ -117,7 +120,7 @@ fn toolchain_management() -> Result<()> {
         toolchain: chan.into(),
         source: Some(ver.into()),
     }
-    .run()?;
+    .run(&ctx.app_ctx())?;
 
     let chan_link = rynzland_home
         .join("toolchains")
@@ -139,7 +142,7 @@ fn toolchain_management() -> Result<()> {
     RmSubCmd {
         toolchain: chan.into(),
     }
-    .run()?;
+    .run(&ctx.app_ctx())?;
     assert!(
         !chan_link.exists(),
         "channel-based toolchain should be gone"
@@ -151,7 +154,7 @@ fn toolchain_management() -> Result<()> {
     RmSubCmd {
         toolchain: ver.into(),
     }
-    .run()?;
+    .run(&ctx.app_ctx())?;
     assert!(!tc_link.exists(), "original link should be gone");
     assert!(
         !underlying_path.exists(),
@@ -178,7 +181,7 @@ fn update_toolchain_gc() -> Result<()> {
         toolchain: stable.into(),
         source: Some(v1.into()),
     }
-    .run()?;
+    .run(&ctx.app_ctx())?;
 
     let stable_link = rynzland_home
         .join("toolchains")
@@ -197,7 +200,7 @@ fn update_toolchain_gc() -> Result<()> {
         toolchain: stable.into(),
         source: Some(v2.into()),
     }
-    .run()?;
+    .run(&ctx.app_ctx())?;
 
     let link_target_v2 = util::soft_link_target(&stable_link)?;
     let underlying_v2 = if link_target_v2.is_relative() {
@@ -235,7 +238,7 @@ fn comp_add_rm() -> Result<()> {
         toolchain: toolchain_name.into(),
         source: None,
     }
-    .run()?;
+    .run(&ctx.app_ctx())?;
 
     let link_path = rynzland_home
         .join("toolchains")
@@ -264,7 +267,7 @@ fn comp_add_rm() -> Result<()> {
         toolchain: toolchain_name.into(),
         components: vec!["cargo".into()],
     }
-    .run()?;
+    .run(&ctx.app_ctx())?;
 
     let underlying_2 = resolve_underlying(&link_path)?;
     assert_ne!(
@@ -286,7 +289,7 @@ fn comp_add_rm() -> Result<()> {
         toolchain: toolchain_name.into(),
         components: vec!["cargo".into()],
     }
-    .run()?;
+    .run(&ctx.app_ctx())?;
 
     let underlying_3 = resolve_underlying(&link_path)?;
     // underlying_2 should be gone

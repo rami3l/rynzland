@@ -1,9 +1,8 @@
 use std::{
     borrow::Cow,
-    env, fs, iter,
+    fs, iter,
     path::{Path, PathBuf},
     process::Command,
-    sync::LazyLock,
 };
 
 use anyhow::Result;
@@ -21,6 +20,39 @@ mod util;
 
 #[cfg(test)]
 mod test;
+
+#[derive(Debug, Clone)]
+pub struct Ctx {
+    pub home: PathBuf,
+    pub rustup: PathBuf,
+    pub rustup_home: PathBuf,
+    pub rynzland_home: PathBuf,
+    pub cargo_home: PathBuf,
+}
+
+impl Ctx {
+    #[must_use]
+    pub fn new(home: impl AsRef<Path>) -> Self {
+        let home = home.as_ref().to_path_buf();
+        Self {
+            rustup: home.join("rustup"),
+            rustup_home: home.join("rustup_home"),
+            rynzland_home: home.join("rynzland_home"),
+            cargo_home: home.join("cargo_home"),
+            home,
+        }
+    }
+
+    pub fn set_env_local<'a>(&self, cmd: &'a mut Command) -> &'a mut Command {
+        cmd.env("RUSTUP_HOME", &self.rustup_home)
+            .env("CARGO_HOME", &self.cargo_home)
+    }
+
+    pub fn set_env_rynzland<'a>(&self, cmd: &'a mut Command) -> &'a mut Command {
+        cmd.env("RUSTUP_HOME", &self.rynzland_home)
+            .env("CARGO_HOME", &self.cargo_home)
+    }
+}
 
 /// Hey choom, mind giving me a hand?
 #[derive(FromArgs, PartialEq, Eq, Debug)]
@@ -41,6 +73,22 @@ pub enum RynzlandSubcmd {
     IdChan(IdChanSubcmd),
     CompAdd(CompAddSubcmd),
     CompRm(CompRmSubcmd),
+}
+
+impl RynzlandSubcmd {
+    pub fn run(self, ctx: &Ctx) -> Result<()> {
+        match self {
+            Self::Setup(cmd) => cmd.run(ctx),
+            Self::Add(cmd) => cmd.run(ctx),
+            Self::Rm(cmd) => cmd.run(ctx),
+            Self::Run(cmd) => cmd.run(ctx),
+            Self::Nuke(cmd) => cmd.run(ctx),
+            Self::Id(cmd) => cmd.run(ctx),
+            Self::IdChan(cmd) => cmd.run(ctx),
+            Self::CompAdd(cmd) => cmd.run(ctx),
+            Self::CompRm(cmd) => cmd.run(ctx),
+        }
+    }
 }
 
 /// add components to a toolchain
@@ -140,44 +188,22 @@ pub struct IdChanSubcmd {
     components: Vec<String>,
 }
 
-static LOCAL_HOME: LazyLock<&'static Path> = LazyLock::new(|| Path::new("home"));
-static LOCAL_RUSTUP: LazyLock<PathBuf> = LazyLock::new(|| LOCAL_HOME.join("rustup"));
-static LOCAL_RUSTUP_HOME: LazyLock<PathBuf> = LazyLock::new(|| LOCAL_HOME.join("rustup_home"));
-static LOCAL_RYNZLAND_HOME: LazyLock<PathBuf> = LazyLock::new(|| LOCAL_HOME.join("rynzland_home"));
-static LOCAL_CARGO_HOME: LazyLock<PathBuf> = LazyLock::new(|| LOCAL_HOME.join("cargo_home"));
-
-unsafe fn set_env_local() {
-    unsafe {
-        env::set_var("RUSTUP_HOME", &*LOCAL_RUSTUP_HOME);
-        env::set_var("CARGO_HOME", &*LOCAL_CARGO_HOME);
-    }
-}
-
-unsafe fn set_env_rynzland() {
-    unsafe {
-        env::set_var("RUSTUP_HOME", &*LOCAL_RYNZLAND_HOME);
-        env::set_var("CARGO_HOME", &*LOCAL_CARGO_HOME);
-    }
-}
-
 impl SetupSubcmd {
     #[allow(clippy::unused_self)]
-    pub fn run(self) -> Result<()> {
-        unsafe { set_env_local() };
-
-        if LOCAL_RUSTUP.try_exists()? {
+    pub fn run(self, ctx: &Ctx) -> Result<()> {
+        if ctx.rustup.try_exists()? {
             info!("rustup already set up, skipping...");
         } else {
             info!("setting up rustup...");
-            rustup::setup(&LOCAL_RUSTUP)?;
+            rustup::setup(&ctx.rustup)?;
         }
         info!("setting up FS link to local rustup...");
-        let local_cargo_bin = LOCAL_CARGO_HOME.join("bin");
+        let local_cargo_bin = ctx.cargo_home.join("bin");
 
         for dir in [
             &local_cargo_bin,
-            &LOCAL_RUSTUP_HOME.join("toolchains"),
-            &LOCAL_RYNZLAND_HOME.join("toolchains"),
+            &ctx.rustup_home.join("toolchains"),
+            &ctx.rynzland_home.join("toolchains"),
         ] {
             fs::create_dir_all(dir)?;
         }
@@ -185,24 +211,24 @@ impl SetupSubcmd {
         let local_rustup_link = local_cargo_bin.join("rustup");
         if !local_rustup_link.try_exists()? {
             #[cfg(unix)]
-            util::soft_link(&LOCAL_RUSTUP, &local_rustup_link)?;
+            util::soft_link(&ctx.rustup, &local_rustup_link)?;
 
             #[cfg(windows)]
-            fs::hard_link(&*LOCAL_RUSTUP, &local_rustup_link)?;
+            fs::hard_link(&*ctx.rustup, &local_rustup_link)?;
         }
 
-        for home in [&*LOCAL_RUSTUP_HOME, &*LOCAL_RYNZLAND_HOME] {
-            Command::new(&*LOCAL_RUSTUP)
+        for home in [&ctx.rustup_home, &ctx.rynzland_home] {
+            Command::new(&ctx.rustup)
                 .env("RUSTUP_HOME", home)
                 .args(["set", "profile", "minimal"])
                 .run_checked()?;
 
-            Command::new(&*LOCAL_RUSTUP)
+            Command::new(&ctx.rustup)
                 .env("RUSTUP_HOME", home)
                 .args(["set", "auto-install", "disable"])
                 .run_checked()?;
 
-            Command::new(&*LOCAL_RUSTUP)
+            Command::new(&ctx.rustup)
                 .env("RUSTUP_HOME", home)
                 .args(["set", "auto-self-update", "disable"])
                 .run_checked()?;
@@ -212,14 +238,12 @@ impl SetupSubcmd {
 }
 
 impl AddSubcmd {
-    pub fn run(&self) -> Result<()> {
-        unsafe { set_env_local() };
-
+    pub fn run(&self, ctx: &Ctx) -> Result<()> {
         let toolchain = qualify_with_target(&self.toolchain);
         let src = self
             .source
             .as_deref()
-            .map_or_else(|| Cow::Borrowed(&*toolchain), qualify_with_target);
+            .map_or_else(|| Cow::Borrowed(&toolchain), qualify_with_target);
 
         let chan = src
             .strip_suffix(&format!("-{}", util::BUILD_TARGET))
@@ -233,9 +257,9 @@ impl AddSubcmd {
         }
 
         // TODO: Use juntion on Windows
-        let src_old = LOCAL_RUSTUP_HOME.join("toolchains").join(&*src);
-        let src_with_id = LOCAL_RUSTUP_HOME.join("toolchains").join(&id);
-        let link = LOCAL_RYNZLAND_HOME.join("toolchains").join(&*toolchain);
+        let src_old = ctx.rustup_home.join("toolchains").join(&*src);
+        let src_with_id = ctx.rustup_home.join("toolchains").join(&id);
+        let link = ctx.rynzland_home.join("toolchains").join(&*toolchain);
 
         // NOTE: We create the in-flight link first to declare the beginning of the
         // transaction of the `link` toolchain creation.
@@ -249,7 +273,7 @@ impl AddSubcmd {
         if src_with_id.exists() {
             info!("toolchain with id {id} already installed, skipping...");
         } else {
-            Command::new(&*LOCAL_RUSTUP)
+            ctx.set_env_local(&mut Command::new(&ctx.rustup))
                 .args(["install", &src])
                 .run_checked()?;
             fs::rename(&src_old, &src_with_id)?;
@@ -260,32 +284,28 @@ impl AddSubcmd {
         fs::rename(&link_in_flight, &link)?;
 
         if let Some(underlying) = underlying {
-            toolchain::gc([underlying])?;
+            toolchain::gc(ctx, [underlying])?;
         }
         Ok(())
     }
 }
 
 impl RmSubCmd {
-    pub fn run(&self) -> Result<()> {
-        unsafe { set_env_local() };
-
+    pub fn run(&self, ctx: &Ctx) -> Result<()> {
         let toolchain = qualify_with_target(&self.toolchain);
         info!("removing toolchain: {toolchain}");
 
-        let link = LOCAL_RYNZLAND_HOME.join("toolchains").join(&*toolchain);
+        let link = ctx.rynzland_home.join("toolchains").join(&*toolchain);
         let link_target = util::soft_link_target(&link)?;
         let underlying = link_target.file_name().unwrap();
 
         util::soft_unlink(&link)?;
-        toolchain::gc([underlying])
+        toolchain::gc(ctx, [underlying])
     }
 }
 
 impl RunSubCmd {
-    pub fn run(&self) -> Result<()> {
-        unsafe { set_env_rynzland() };
-
+    pub fn run(&self, ctx: &Ctx) -> Result<()> {
         let Self {
             shim,
             args,
@@ -299,22 +319,19 @@ impl RunSubCmd {
                     .collect(),
             );
         }
-        let args = args.as_slice();
-
-        Command::new(&*LOCAL_RUSTUP)
+        ctx.set_env_rynzland(&mut Command::new(&ctx.rustup))
             .env("RUSTUP_FORCE_ARG0", &shim)
-            .args(args)
-            .run_checked()?;
-        Ok(())
+            .args(&*args)
+            .run_checked()
     }
 }
 
 impl NukeSubcmd {
     #[allow(clippy::unused_self)]
-    pub fn run(self) -> Result<()> {
+    pub fn run(self, ctx: &Ctx) -> Result<()> {
         info!("nuking local rustup installation...");
 
-        let walker = LOCAL_HOME.read_dir()?;
+        let walker = ctx.home.read_dir()?;
         for entry in walker {
             let entry = entry?;
             let file_type = entry.file_type()?;
@@ -333,11 +350,9 @@ impl NukeSubcmd {
 }
 
 impl IdSubcmd {
-    pub fn run(&self) -> Result<()> {
-        unsafe { set_env_rynzland() };
-
+    pub fn run(&self, ctx: &Ctx) -> Result<()> {
         let toolchain = qualify_with_target(&self.toolchain);
-        let toolchain_path = LOCAL_RYNZLAND_HOME.join("toolchains").join(&*toolchain);
+        let toolchain_path = ctx.rynzland_home.join("toolchains").join(&*toolchain);
         let id = IdentifiableToolchain::new(&toolchain_path)?.id();
         println!("{id}");
         Ok(())
@@ -345,7 +360,8 @@ impl IdSubcmd {
 }
 
 impl IdChanSubcmd {
-    pub fn run(&self) -> Result<()> {
+    #[allow(clippy::unused_self)]
+    pub fn run(&self, _ctx: &Ctx) -> Result<()> {
         let id_toolchain = toolchain::resolve_channel(&self.channel, &self.components)?;
         println!("{}", id_toolchain.id());
         Ok(())
@@ -353,89 +369,89 @@ impl IdChanSubcmd {
 }
 
 impl CompAddSubcmd {
-    pub fn run(&self) -> Result<()> {
-        modify_components(&self.toolchain, &self.components, true)
+    pub fn run(&self, ctx: &Ctx) -> Result<()> {
+        ctx.modify_components(&self.toolchain, &self.components, true)
     }
 }
 
 impl CompRmSubcmd {
-    pub fn run(&self) -> Result<()> {
-        modify_components(&self.toolchain, &self.components, false)
+    pub fn run(&self, ctx: &Ctx) -> Result<()> {
+        ctx.modify_components(&self.toolchain, &self.components, false)
     }
 }
 
-fn modify_components(toolchain: &str, comps: &[String], add: bool) -> Result<()> {
-    if comps.is_empty() {
-        info!("no components specified, skipping...");
-        return Ok(());
-    }
-
-    unsafe { set_env_local() };
-
-    let toolchain = qualify_with_target(toolchain);
-    let link = LOCAL_RYNZLAND_HOME.join("toolchains").join(&*toolchain);
-
-    let underlying_path = link.canonicalize()?;
-    let mut underlying = IdentifiableToolchain::new(&underlying_path)?;
-
-    for comp in comps {
-        let comp = util::qualify_with_target(comp);
-        if add {
-            underlying.components.insert(comp.into_owned());
-        } else {
-            underlying.components.remove(&*comp);
+impl Ctx {
+    fn modify_components(&self, toolchain: &str, comps: &[String], add: bool) -> Result<()> {
+        if comps.is_empty() {
+            info!("no components specified, skipping...");
+            return Ok(());
         }
+
+        let toolchain = qualify_with_target(toolchain);
+        let link = self.rynzland_home.join("toolchains").join(&*toolchain);
+
+        let underlying_path = link.canonicalize()?;
+        let mut underlying = IdentifiableToolchain::new(&underlying_path)?;
+
+        for comp in comps {
+            let comp = util::qualify_with_target(comp);
+            if add {
+                underlying.components.insert(comp.into_owned());
+            } else {
+                underlying.components.remove(&*comp);
+            }
+        }
+
+        let old_id = underlying_path.file_name().unwrap();
+        let new_id = underlying.id();
+
+        let new_toolchain_dir = self.rustup_home.join("toolchains").join(&new_id);
+
+        // NOTE: We create the in-flight link first to declare the beginning of the
+        // transaction of the `link` toolchain creation.
+        let link_in_flight = util::with_tmp(&link);
+        util::soft_link(&new_toolchain_dir, &link_in_flight)?;
+
+        if new_toolchain_dir.exists() {
+            info!("toolchain with id {new_id} already exists, switching...");
+        } else {
+            info!("creating toolchain {new_id}...");
+            let tmp_dir = util::with_tmp(&new_toolchain_dir);
+
+            info!(
+                "cloning {} into {}...",
+                underlying_path.display(),
+                tmp_dir.display()
+            );
+
+            // NOTE: This will likely error out if the underlying toolchain exists, because
+            // the first `fs::create_dir()` will fail in the first place.
+            util::copy_dir_all(&underlying_path, &tmp_dir)?;
+
+            let op = if add { "add" } else { "remove" };
+
+            // HACK: We will have to make rustup think that `toolchain_name` is an official
+            // toolchain, so it has to use an official name. This logic shouldn't exist in
+            // the final version. Anyway, following the current naming scheme, a
+            // toolchain in the pool can never have the name `"stable-<host>"`, so it's
+            // fine.
+            let toolchain_name = util::qualify_with_target("stable");
+            let hack_link = tmp_dir.with_file_name(toolchain_name.as_ref());
+            util::soft_link(&tmp_dir, &hack_link)?;
+            self.set_env_local(&mut Command::new(&self.rustup))
+                .env("RUSTUP_TOOLCHAIN", &*toolchain_name)
+                .arg("component")
+                .arg(op)
+                .args(comps)
+                .run_checked()?;
+            util::soft_unlink(&hack_link)?;
+
+            fs::rename(&tmp_dir, &new_toolchain_dir)?;
+        }
+
+        // NOTE: Renaming is atomic on most platforms.
+        // This also declares the successful end of the transaction.
+        fs::rename(&link_in_flight, &link)?;
+        toolchain::gc(self, [old_id])
     }
-
-    let old_id = underlying_path.file_name().unwrap();
-    let new_id = underlying.id();
-
-    let new_toolchain_dir = LOCAL_RUSTUP_HOME.join("toolchains").join(&new_id);
-
-    // NOTE: We create the in-flight link first to declare the beginning of the
-    // transaction of the `link` toolchain creation.
-    let link_in_flight = util::with_tmp(&link);
-    util::soft_link(&new_toolchain_dir, &link_in_flight)?;
-
-    if new_toolchain_dir.exists() {
-        info!("toolchain with id {new_id} already exists, switching...");
-    } else {
-        info!("creating toolchain {new_id}...");
-        let tmp_dir = util::with_tmp(&new_toolchain_dir);
-
-        info!(
-            "cloning {} into {}...",
-            underlying_path.display(),
-            tmp_dir.display()
-        );
-
-        // NOTE: This will likely error out if the underlying toolchain exists, because
-        // the first `fs::create_dir()` will fail in the first place.
-        util::copy_dir_all(&underlying_path, &tmp_dir)?;
-
-        let op = if add { "add" } else { "remove" };
-
-        // HACK: We will have to make rustup think that `toolchain_name` is an official
-        // toolchain, so it has to use an official name. This logic shouldn't
-        // exist in the final version. Anyway, following the current naming scheme, a
-        // toolchain in the pool can never have the name `"stable-<host>"`, so it's
-        // fine.
-        let toolchain_name = util::qualify_with_target("stable");
-        let hack_link = tmp_dir.with_file_name(toolchain_name.as_ref());
-        util::soft_link(&tmp_dir, &hack_link)?;
-        Command::new(&*LOCAL_RUSTUP)
-            .env("RUSTUP_TOOLCHAIN", &*toolchain_name)
-            .arg("component")
-            .arg(op)
-            .args(comps)
-            .run_checked()?;
-        util::soft_unlink(&hack_link)?;
-
-        fs::rename(&tmp_dir, &new_toolchain_dir)?;
-    }
-
-    // NOTE: Renaming is atomic on most platforms.
-    // This also declares the successful end of the transaction.
-    fs::rename(&link_in_flight, &link)?;
-    toolchain::gc([old_id])
 }
