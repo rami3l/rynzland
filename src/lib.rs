@@ -2,15 +2,18 @@ use std::{
     borrow::Cow,
     env, fs, iter,
     path::{Path, PathBuf},
+    process::Command,
     sync::LazyLock,
 };
 
 use anyhow::Result;
 use argh::FromArgs;
-use cmd_lib::run_cmd;
 use tracing::info;
 
-use crate::{toolchain::IdentifiableToolchain, util::qualify_with_target};
+use crate::{
+    toolchain::IdentifiableToolchain,
+    util::{CommandExt, qualify_with_target},
+};
 
 mod rustup;
 mod toolchain;
@@ -189,9 +192,20 @@ impl SetupSubcmd {
         }
 
         for home in [&*LOCAL_RUSTUP_HOME, &*LOCAL_RYNZLAND_HOME] {
-            run_cmd! { RUSTUP_HOME=$home $LOCAL_RUSTUP set profile minimal }?;
-            run_cmd! { RUSTUP_HOME=$home $LOCAL_RUSTUP set auto-install disable }?;
-            run_cmd! { RUSTUP_HOME=$home $LOCAL_RUSTUP set auto-self-update disable }?;
+            Command::new(&*LOCAL_RUSTUP)
+                .env("RUSTUP_HOME", home)
+                .args(["set", "profile", "minimal"])
+                .run_checked()?;
+
+            Command::new(&*LOCAL_RUSTUP)
+                .env("RUSTUP_HOME", home)
+                .args(["set", "auto-install", "disable"])
+                .run_checked()?;
+
+            Command::new(&*LOCAL_RUSTUP)
+                .env("RUSTUP_HOME", home)
+                .args(["set", "auto-self-update", "disable"])
+                .run_checked()?;
         }
         Ok(())
     }
@@ -235,7 +249,9 @@ impl AddSubcmd {
         if src_with_id.exists() {
             info!("toolchain with id {id} already installed, skipping...");
         } else {
-            run_cmd! { $LOCAL_RUSTUP install $src }?;
+            Command::new(&*LOCAL_RUSTUP)
+                .args(["install", &src])
+                .run_checked()?;
             fs::rename(&src_old, &src_with_id)?;
         }
 
@@ -285,7 +301,10 @@ impl RunSubCmd {
         }
         let args = args.as_slice();
 
-        run_cmd! { RUSTUP_FORCE_ARG0=$shim $LOCAL_RUSTUP $[args] }?;
+        Command::new(&*LOCAL_RUSTUP)
+            .env("RUSTUP_FORCE_ARG0", &shim)
+            .args(args)
+            .run_checked()?;
         Ok(())
     }
 }
@@ -399,11 +418,17 @@ fn modify_components(toolchain: &str, comps: &[String], add: bool) -> Result<()>
         // HACK: We will have to make rustup think that `toolchain_name` is an official
         // toolchain, so it has to use an official name. This logic shouldn't
         // exist in the final version. Anyway, following the current naming scheme, a
-        // toolchain in the pool can never have the name `"stable-<host>"`, so it's fine.
+        // toolchain in the pool can never have the name `"stable-<host>"`, so it's
+        // fine.
         let toolchain_name = util::qualify_with_target("stable");
         let hack_link = tmp_dir.with_file_name(toolchain_name.as_ref());
         util::soft_link(&tmp_dir, &hack_link)?;
-        run_cmd! { RUSTUP_TOOLCHAIN=$toolchain_name $LOCAL_RUSTUP component $op $[comps] }?;
+        Command::new(&*LOCAL_RUSTUP)
+            .env("RUSTUP_TOOLCHAIN", &*toolchain_name)
+            .arg("component")
+            .arg(op)
+            .args(comps)
+            .run_checked()?;
         util::soft_unlink(&hack_link)?;
 
         fs::rename(&tmp_dir, &new_toolchain_dir)?;

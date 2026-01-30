@@ -3,11 +3,56 @@ use std::{
     fs::{self, File},
     io,
     path::{Path, PathBuf},
+    process::Command,
 };
 
-use anyhow::Result;
+use anyhow::{Context, Result};
 
 pub const BUILD_TARGET: &str = env!("TARGET");
+
+pub trait CommandExt {
+    fn run_checked(&mut self) -> Result<()>;
+}
+
+impl CommandExt for Command {
+    fn run_checked(&mut self) -> Result<()> {
+        let program = self.get_program().to_string_lossy();
+        let args = self
+            .get_args()
+            .map(|a| a.to_string_lossy())
+            .collect::<Vec<_>>()
+            .join(" ");
+        let envs = self
+            .get_envs()
+            .filter_map(|(k, v)| {
+                let k = k.to_string_lossy();
+                let v = v.map(|v| v.to_string_lossy())?;
+                Some(format!("{k}={v}"))
+            })
+            .collect::<Vec<_>>()
+            .join(" ");
+
+        let cmd_str = if envs.is_empty() {
+            format!("{program} {args}")
+        } else {
+            format!("{envs} {program} {args}")
+        };
+
+        tracing::info!("running: {cmd_str}");
+
+        let output = self
+            .output()
+            .with_context(|| format!("failed to spawn command: {cmd_str}"))?;
+
+        if !output.status.success() {
+            let stdout = String::from_utf8_lossy(&output.stdout);
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            anyhow::bail!("command failed: {cmd_str}\n\nSTDOUT:\n{stdout}\n\nSTDERR:\n{stderr}");
+        }
+
+        Ok(())
+    }
+}
 
 pub fn qualify_with_target(toolchain: &str) -> Cow<'_, str> {
     let suffix = format!("-{BUILD_TARGET}");
@@ -48,8 +93,8 @@ pub fn with_tmp(path: &Path) -> PathBuf {
 
 pub struct HashEncoder;
 
-/// Creates a soft link from `link` to `original` (symlink on Unix, junction on Windows).
-/// Both paths are expected to be absolute.
+/// Creates a soft link from `link` to `original` (symlink on Unix, junction on
+/// Windows). Both paths are expected to be absolute.
 pub fn soft_link(original: &Path, link: &Path) -> Result<()> {
     #[cfg(unix)]
     {

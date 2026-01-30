@@ -5,17 +5,17 @@ use std::{
     fs,
     hash::{Hash, Hasher},
     path::Path,
+    process::Command,
     sync::LazyLock,
 };
 
 use anyhow::{self, Context, Result};
-use cmd_lib::run_cmd;
 use tracing::info;
 use twox_hash::XxHash64;
 
 use crate::{
     LOCAL_RUSTUP, LOCAL_RYNZLAND_HOME, rustup, set_env_local,
-    util::{self, HashEncoder, qualify_with_target},
+    util::{self, CommandExt, HashEncoder, qualify_with_target},
 };
 
 static CHANNEL_MANIFEST_SUBPATH: LazyLock<&'static Path> =
@@ -141,9 +141,12 @@ where
     let rm = |tc: &OsString| {
         info!(
             "underlying toolchain {} is no longer referenced, removing...",
-            tc.display()
+            tc.display(),
         );
-        run_cmd! { $LOCAL_RUSTUP uninstall $tc }
+        Command::new(&*LOCAL_RUSTUP)
+            .arg("uninstall")
+            .arg(tc)
+            .run_checked()
     };
 
     let Some(candidates) = &candidates else {

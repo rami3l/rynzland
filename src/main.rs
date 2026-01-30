@@ -7,7 +7,6 @@ fn main() -> Result<()> {
     tracing_subscriber::fmt::init();
     unsafe {
         env::remove_var("RUSTUP_TOOLCHAIN");
-        cmd_lib::set_debug(true);
     }
 
     let app: Rynzland = argh::from_env();
