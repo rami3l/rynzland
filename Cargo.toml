@@ -7,13 +7,14 @@ edition = "2024"
 anyhow = "1.0.100"
 argh = "0.1.13"
 base-x = "0.2.11"
-ureq = { version = "3.1.4", features = ["platform-verifier", "socks-proxy"] }
+gix-lock = "21.0.0"
 tempfile = "3.24.0"
 toml = "0.9.11"
 tracing = "0.1.44"
 tracing-log = "0.2.0"
 tracing-subscriber = "0.3.22"
 twox-hash = "2.1.2"
+ureq = { version = "3.1.4", features = ["platform-verifier", "socks-proxy"] }
 
 [target."cfg(unix)".dependencies]
 pathdiff = "0.2.3"

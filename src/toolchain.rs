@@ -1,11 +1,9 @@
 use std::{
     borrow::ToOwned,
-    collections::{BTreeSet, HashSet},
-    ffi::{OsStr, OsString},
+    collections::BTreeSet,
     fs,
     hash::{Hash, Hasher},
     path::Path,
-    process::Command,
     sync::LazyLock,
 };
 
@@ -14,8 +12,8 @@ use tracing::info;
 use twox_hash::XxHash64;
 
 use crate::{
-    Ctx, rustup,
-    util::{self, CommandExt, HashEncoder, qualify_with_target},
+    rustup,
+    util::{self, HashEncoder, qualify_with_target},
 };
 
 static CHANNEL_MANIFEST_SUBPATH: LazyLock<&'static Path> =
@@ -108,57 +106,6 @@ impl IdentifiableToolchain {
 
         id
     }
-}
-
-/// Garbage collect all toolchain links in the directory specified by
-/// `ctx.rynzland_home` that are no longer referencing any of the given
-/// candidates. If `candidates` is `None`, then it defaults to all underlying
-/// toolchains.
-pub fn gc<S, I>(ctx: &Ctx, candidates: impl Into<Option<I>>) -> Result<()>
-where
-    S: AsRef<OsStr>,
-    I: IntoIterator<Item = S>,
-{
-    // TODO: Add an OS-global lock to avoid multiple GCs clashing with each other.
-    let candidates: Option<HashSet<_>> = candidates
-        .into()
-        .map(|cs| cs.into_iter().map(|it| it.as_ref().to_owned()).collect());
-    if candidates.as_ref().is_some_and(HashSet::is_empty) {
-        return Ok(());
-    }
-
-    let mut referenced = HashSet::new();
-    let walker = ctx.rynzland_home.join("toolchains").read_dir()?;
-    for entry in walker {
-        if let Ok(target) = util::soft_link_target(entry?.path())
-            && let Some(name) = target.file_name()
-        {
-            referenced.insert(name.to_owned());
-        }
-    }
-
-    let rm = |tc: &OsString| {
-        info!(
-            "underlying toolchain {} is no longer referenced, removing...",
-            tc.display(),
-        );
-        ctx.set_env_local(&mut Command::new(&ctx.rustup))
-            .arg("uninstall")
-            .arg(tc)
-            .run_checked()
-    };
-
-    let Some(candidates) = &candidates else {
-        for tc in referenced {
-            rm(&tc)?;
-        }
-        return Ok(());
-    };
-
-    for tc in candidates.difference(&referenced) {
-        rm(tc)?;
-    }
-    Ok(())
 }
 
 pub fn rust_ver_from_manifest(manifest_path: &Path) -> Result<String> {
