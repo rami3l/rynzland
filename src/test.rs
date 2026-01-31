@@ -1,5 +1,8 @@
 mod prelude;
 
+use std::{collections::HashSet, thread, time::Duration};
+
+use gix_lock::acquire::Fail;
 use prelude::*;
 
 use crate::{
@@ -296,6 +299,296 @@ fn comp_add_rm() -> Result<()> {
     assert_eq!(
         underlying_1, underlying_3,
         "Should return to original toolchain ID/path"
+    );
+
+    drop(ctx);
+    Ok(())
+}
+
+#[test]
+fn concurrent_add_same() -> Result<()> {
+    let ctx = Ctx::setup()?;
+    let app_ctx = ctx.app_ctx();
+    let home = ctx.home();
+    let rynzland_home = home.join("rynzland_home");
+
+    let toolchain = "1.80.0";
+    let thread_count = 5;
+
+    let mut handles = Vec::new();
+    for _ in 0..thread_count {
+        let app_ctx = app_ctx.clone();
+        let toolchain = toolchain.to_owned();
+        let handle = thread::spawn(move || {
+            AddSubcmd {
+                toolchain,
+                source: None,
+            }
+            .run(&app_ctx)
+        });
+        handles.push(handle);
+    }
+
+    let successes = handles
+        .into_iter()
+        .filter_map(|it| it.join().expect("thread panicked").ok())
+        .count();
+    assert_eq!(successes, 1, "only one thread should succeed");
+
+    let link_path = rynzland_home
+        .join("toolchains")
+        .join(util::qualify_with_target(toolchain).as_ref());
+    assert!(link_path.exists(), "toolchain link should exist");
+
+    let link_target = util::soft_link_target(&link_path)?;
+    let underlying_path = if link_target.is_relative() {
+        link_path.with_file_name(link_target)
+    } else {
+        link_target
+    };
+    assert!(
+        underlying_path.exists(),
+        "underlying toolchain should exist"
+    );
+
+    drop(ctx);
+    Ok(())
+}
+
+#[test]
+fn concurrent_add_same_underlying() -> Result<()> {
+    let ctx = Ctx::setup()?;
+    let app_ctx = ctx.app_ctx();
+    let home = ctx.home();
+    let rynzland_home = home.join("rynzland_home");
+
+    let ver = "1.80.0";
+    let toolchains = ["stable", "1.80", ver];
+
+    let mut handles = Vec::new();
+    for toolchain in toolchains {
+        let app_ctx = app_ctx.clone();
+        let toolchain = toolchain.to_owned();
+        let ver = ver.to_owned();
+        let handle = thread::spawn(move || {
+            AddSubcmd {
+                toolchain,
+                source: Some(ver),
+            }
+            .run(&app_ctx)
+        });
+        handles.push(handle);
+    }
+
+    let successes: Vec<_> = handles
+        .into_iter()
+        .enumerate()
+        .filter_map(|(i, it)| it.join().expect("thread panicked").is_ok().then_some(i))
+        .collect();
+    assert_eq!(successes.len(), 1, "only one thread should succeed");
+
+    let link_path = rynzland_home
+        .join("toolchains")
+        .join(util::qualify_with_target(toolchains[successes[0]]).as_ref());
+    assert!(link_path.exists(), "toolchain link should exist");
+
+    let link_target = util::soft_link_target(&link_path)?;
+    let underlying_path = if link_target.is_relative() {
+        link_path.with_file_name(link_target)
+    } else {
+        link_target
+    };
+    assert!(
+        underlying_path.exists(),
+        "underlying toolchain should exist"
+    );
+
+    drop(ctx);
+    Ok(())
+}
+
+#[test]
+fn concurrent_rm_same() -> Result<()> {
+    let ctx = Ctx::setup()?;
+    let app_ctx = ctx.app_ctx();
+    let home = ctx.home();
+    let rynzland_home = home.join("rynzland_home");
+
+    let toolchain = "1.79.0";
+    let thread_count = 5;
+
+    // First add the toolchain.
+    AddSubcmd {
+        toolchain: toolchain.into(),
+        source: None,
+    }
+    .run(&app_ctx)?;
+
+    let link_path = rynzland_home
+        .join("toolchains")
+        .join(util::qualify_with_target(toolchain).as_ref());
+    assert!(link_path.exists(), "toolchain link should exist");
+
+    let mut handles = Vec::new();
+    for _ in 0..thread_count {
+        let app_ctx = app_ctx.clone();
+        let toolchain = toolchain.to_owned();
+        let handle = thread::spawn(move || RmSubCmd { toolchain }.run(&app_ctx));
+        handles.push(handle);
+    }
+
+    let successes = handles
+        .into_iter()
+        .filter_map(|it| it.join().expect("thread panicked").ok())
+        .count();
+    assert_eq!(successes, 1, "only one thread should succeed");
+    assert!(!link_path.exists(), "toolchain link should be gone");
+
+    drop(ctx);
+    Ok(())
+}
+
+#[test]
+fn concurrent_rm_same_underlying() -> Result<()> {
+    let ctx = Ctx::setup()?;
+    let app_ctx = ctx
+        .app_ctx()
+        .with_gc_lock_backoff(Fail::AfterDurationWithBackoff(Duration::from_mins(1)));
+    let home = ctx.home();
+    let rynzland_home = home.join("rynzland_home");
+
+    let ver = "1.79.0";
+    let toolchains = ["stable", "1.79", ver];
+
+    for toolchain in toolchains {
+        AddSubcmd {
+            toolchain: toolchain.into(),
+            source: Some(ver.into()),
+        }
+        .run(&app_ctx)?;
+    }
+
+    let mut underlying_toolchains = HashSet::new();
+    for toolchain in toolchains {
+        let link_path = rynzland_home
+            .join("toolchains")
+            .join(util::qualify_with_target(toolchain).as_ref());
+        assert!(link_path.exists(), "toolchain link should exist");
+
+        let link_target = util::soft_link_target(&link_path)?;
+        let underlying_toolchain = if link_target.is_relative() {
+            link_path.with_file_name(link_target)
+        } else {
+            link_target
+        };
+        underlying_toolchains.insert(underlying_toolchain);
+    }
+
+    assert_eq!(
+        underlying_toolchains.len(),
+        1,
+        "all toolchains should share the same underlying toolchain"
+    );
+    let underlying_toolchain = underlying_toolchains.into_iter().next().unwrap();
+
+    let mut handles = Vec::new();
+    for toolchain in toolchains {
+        let app_ctx = app_ctx.clone();
+        let toolchain = toolchain.to_owned();
+        let handle = thread::spawn(move || RmSubCmd { toolchain }.run(&app_ctx));
+        handles.push(handle);
+    }
+
+    let successes = handles
+        .into_iter()
+        .filter_map(|it| it.join().expect("thread panicked").ok())
+        .count();
+    assert_eq!(
+        successes,
+        toolchains.len(),
+        "all threads should succeed under backoff"
+    );
+
+    for toolchain in toolchains {
+        let link_path = rynzland_home
+            .join("toolchains")
+            .join(util::qualify_with_target(toolchain).as_ref());
+        assert!(!link_path.exists(), "toolchain link should be gone");
+    }
+    assert!(
+        !underlying_toolchain.exists(),
+        "underlying toolchain should be gone",
+    );
+
+    drop(ctx);
+    Ok(())
+}
+
+#[test]
+fn concurrent_comp_rm_same_target() -> Result<()> {
+    let ctx = Ctx::setup()?;
+    let app_ctx = ctx.app_ctx();
+    let home = ctx.home();
+    let rynzland_home = home.join("rynzland_home");
+    let rustup_home = home.join("rustup_home");
+
+    let ver = "1.80.0";
+    let toolchains = ["stable", "1.80", ver];
+
+    for toolchain in toolchains {
+        AddSubcmd {
+            toolchain: toolchain.into(),
+            source: Some(ver.into()),
+        }
+        .run(&app_ctx)?;
+    }
+
+    let mut underlying_toolchains = HashSet::new();
+    for toolchain in toolchains {
+        let link_path = rynzland_home
+            .join("toolchains")
+            .join(util::qualify_with_target(toolchain).as_ref());
+        assert!(link_path.exists(), "toolchain link should exist");
+
+        let link_target = util::soft_link_target(&link_path)?;
+        let underlying_toolchain = if link_target.is_relative() {
+            link_path.with_file_name(link_target)
+        } else {
+            link_target
+        };
+        underlying_toolchains.insert(underlying_toolchain.canonicalize()?);
+    }
+
+    assert_eq!(
+        underlying_toolchains.len(),
+        1,
+        "all toolchains should share the same underlying toolchain"
+    );
+
+    let mut handles = Vec::new();
+    for toolchain in toolchains {
+        let app_ctx = app_ctx.clone();
+        let toolchain = toolchain.to_owned();
+        let handle = thread::spawn(move || {
+            CompRmSubcmd {
+                toolchain,
+                components: vec!["cargo".into()],
+            }
+            .run(&app_ctx)
+        });
+        handles.push(handle);
+    }
+
+    let successes = handles
+        .into_iter()
+        .filter_map(|it| it.join().expect("thread panicked").ok())
+        .count();
+    assert_eq!(successes, 1, "only one thread should succeed");
+
+    let final_pool_count = rustup_home.join("toolchains").read_dir()?.count();
+    assert_eq!(
+        final_pool_count, 2,
+        "the final pool size should be 2 (the original one + the new one without cargo)",
     );
 
     drop(ctx);
