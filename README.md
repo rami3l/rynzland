@@ -55,8 +55,9 @@ Some basic features that should be implemented include:
   - [x] ... to a different manifest, i.e. minor or patch version update.
 - [x] Achieving Windows compatibility.
 - [ ] Verifying the process safety of the new transaction system.
-  - [ ] ... when concurrently updating the same "upper" toolchain.
-  - [ ] ... when concurrently installing the same "lower" toolchain.
+  - [x] ... when concurrently (un)installing the same "lower" toolchain.
+  - [x] ... when concurrently (un)installing the same "lower" toolchain.
+  - [x] ... when concurrently modifying the same "lower" toolchain.
 
 [rustup#988]: https://github.com/rust-lang/rustup/issues/988
 [`rami3l/noife`]: https://github.com/rami3l/noife
