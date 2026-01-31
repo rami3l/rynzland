@@ -47,6 +47,7 @@ impl Ctx {
         }
     }
 
+    #[must_use]
     pub fn with_gc_lock_backoff(mut self, backoff: impl Into<Option<Fail>>) -> Self {
         self.gc_lock_backoff = backoff.into().unwrap_or_default();
         self
@@ -329,7 +330,7 @@ impl RunSubCmd {
             );
         }
         ctx.set_env_rynzland(&mut Command::new(&ctx.rustup))
-            .env("RUSTUP_FORCE_ARG0", &shim)
+            .env("RUSTUP_FORCE_ARG0", shim)
             .args(&*args)
             .run_checked()
     }
