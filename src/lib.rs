@@ -7,6 +7,7 @@ use std::{
 
 use anyhow::Result;
 use argh::FromArgs;
+use gix_lock::acquire::Fail;
 use tracing::info;
 
 use crate::{
@@ -14,6 +15,7 @@ use crate::{
     util::{CommandExt, qualify_with_target},
 };
 
+mod gc;
 mod rustup;
 mod toolchain;
 mod util;
@@ -28,6 +30,7 @@ pub struct Ctx {
     pub rustup_home: PathBuf,
     pub rynzland_home: PathBuf,
     pub cargo_home: PathBuf,
+    gc_lock_backoff: Fail,
 }
 
 impl Ctx {
@@ -40,7 +43,13 @@ impl Ctx {
             rynzland_home: home.join("rynzland_home"),
             cargo_home: home.join("cargo_home"),
             home,
+            gc_lock_backoff: Fail::Immediately,
         }
+    }
+
+    pub fn with_gc_lock_backoff(mut self, backoff: impl Into<Option<Fail>>) -> Self {
+        self.gc_lock_backoff = backoff.into().unwrap_or_default();
+        self
     }
 
     pub fn set_env_local<'a>(&self, cmd: &'a mut Command) -> &'a mut Command {
@@ -284,7 +293,7 @@ impl AddSubcmd {
         fs::rename(&link_in_flight, &link)?;
 
         if let Some(underlying) = underlying {
-            toolchain::gc(ctx, [underlying])?;
+            ctx.gc([underlying])?;
         }
         Ok(())
     }
@@ -300,7 +309,7 @@ impl RmSubCmd {
         let underlying = link_target.file_name().unwrap();
 
         util::soft_unlink(&link)?;
-        toolchain::gc(ctx, [underlying])
+        ctx.gc([underlying])
     }
 }
 
@@ -452,6 +461,6 @@ impl Ctx {
         // NOTE: Renaming is atomic on most platforms.
         // This also declares the successful end of the transaction.
         fs::rename(&link_in_flight, &link)?;
-        toolchain::gc(self, [old_id])
+        self.gc([old_id])
     }
 }

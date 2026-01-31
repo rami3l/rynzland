@@ -8,5 +8,6 @@ fn main() -> Result<()> {
     }
 
     let app: Rynzland = argh::from_env();
-    app.subcmd.run(&Ctx::new("home"))
+    let ctx = Ctx::new("home");
+    app.subcmd.run(&ctx)
 }
