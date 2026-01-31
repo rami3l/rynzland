@@ -54,7 +54,7 @@ Some basic features that should be implemented include:
   - [x] ... to the same manifest, i.e. component addition or removal.
   - [x] ... to a different manifest, i.e. minor or patch version update.
 - [x] Achieving Windows compatibility.
-- [ ] Verifying the process safety of the new transaction system.
+- [x] Verifying the process safety of the new transaction system.
   - [x] ... when concurrently (un)installing the same "lower" toolchain.
   - [x] ... when concurrently (un)installing the same "lower" toolchain.
   - [x] ... when concurrently modifying the same "lower" toolchain.
