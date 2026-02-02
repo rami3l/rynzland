@@ -4,18 +4,19 @@ use std::{
     process::Command,
 };
 
-use crate::{
-    Ctx,
-    util::{self, CommandExt},
-};
 use anyhow::Result;
 use gix_lock::Marker;
 use tracing::info;
 
+use crate::{
+    Ctx,
+    util::{self, CommandExt},
+};
+
 impl Ctx {
-    /// Garbage collect all toolchain links in the directory specified by
-    /// `self.rynzland_home` that are no longer referencing any of the given
-    /// candidates. If `candidates` is `None`, then it defaults to all underlying
+    /// Garbage collect all underlying toolchains among `candidates` located in
+    /// `self.rustup_home` that are no longer referenced by any of the toolchain
+    /// links. If `candidates` is `None`, then it defaults to all underlying
     /// toolchains.
     pub fn gc<S, I>(&self, candidates: impl Into<Option<I>>) -> Result<()>
     where
