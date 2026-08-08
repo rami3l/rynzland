@@ -23,6 +23,17 @@ vars ==
     <<heap, trash, refs, target, pending, phase,
       lockOwner, lockedHash>>
 
+TypeOK ==
+    /\ heap \subseteq Incarnations
+    /\ trash \subseteq Incarnations
+    /\ heap \cap trash = {}
+    /\ refs \in [Refs -> (Hashes \cup {0})]
+    /\ target \in [Transactions -> (Refs \cup {"none"})]
+    /\ pending \in [Transactions -> (Hashes \cup {0})]
+    /\ phase \in [Transactions -> {"idle", "running"}]
+    /\ lockOwner \in Transactions \cup {"none", "gc"}
+    /\ lockedHash \in Hashes \cup {0}
+
 HashOf(i) == i.hash
 
 HasHash(s, h) ==
@@ -175,6 +186,7 @@ TxLockConsistency ==
 (***************************************************************************)
 
 Invariant ==
+    /\ TypeOK
     /\ RefIntegrity
     /\ HeapTrashDisjoint
     /\ LockConsistency
