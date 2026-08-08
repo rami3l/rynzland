@@ -1,94 +1,80 @@
 ----------------------------- MODULE RustupGC -----------------------------
 
-EXTENDS Naturals
+EXTENDS Naturals, FiniteSets
 
 Refs == {"stable", "nightly"}
-Hashes == {1, 2}
-Transactions == {"tx1", "tx2"}
+Hashes == {1, 2, 3}
+Transactions == {"tx1", "tx2", "tx3"}
 
 Incarnations ==
     {[hash |-> 1, id |-> 1],
      [hash |-> 1, id |-> 2],
+     [hash |-> 1, id |-> 3],
      [hash |-> 2, id |-> 1],
-     [hash |-> 2, id |-> 2]}
+     [hash |-> 2, id |-> 2],
+     [hash |-> 3, id |-> 1],
+     [hash |-> 3, id |-> 2]}
 
 VARIABLES
-    heap,
-    trash,
-    refs,
-    target,
-    pending,
-    phase,
-    lockOwner,
-    lockedHash,
-    gcChecked,
-    trashLocked
+    heap, trash, refs, target, pending, phase,
+    lockOwner, lockedHash
 
 vars ==
     <<heap, trash, refs, target, pending, phase,
-      lockOwner, lockedHash, gcChecked, trashLocked>>
+      lockOwner, lockedHash>>
 
 HashOf(i) == i.hash
 
 HasHash(s, h) ==
     \E i \in s : HashOf(i) = h
 
-FreshFor(h) ==
-    {i \in Incarnations :
-        HashOf(i) = h /\ i \notin heap /\ i \notin trash}
-
 Reachable(h) ==
     \E r \in Refs : refs[r] = h
+
+FreshIncarnation(h) ==
+    CHOOSE i \in Incarnations :
+        /\ i.hash = h
+        /\ i \notin heap
+        /\ i \notin trash
 
 Init ==
     /\ heap = {}
     /\ trash = {}
     /\ refs = [r \in Refs |-> 0]
-    /\ target = [t \in Transactions |-> 0]
+    /\ target = [t \in Transactions |-> "none"]
     /\ pending = [t \in Transactions |-> 0]
     /\ phase = [t \in Transactions |-> "idle"]
     /\ lockOwner = "none"
     /\ lockedHash = 0
-    /\ gcChecked = FALSE
-    /\ trashLocked = 0
+
+(***************************************************************************)
+(* Transaction                                                             *)
+(***************************************************************************)
 
 Start(t, r, h) ==
     /\ phase[t] = "idle"
     /\ r \in Refs
     /\ h \in Hashes
-    /\ phase' = [phase EXCEPT ![t] = "running"]
     /\ target' = [target EXCEPT ![t] = r]
     /\ pending' = [pending EXCEPT ![t] = h]
-    /\ UNCHANGED <<heap, trash, refs, lockOwner, lockedHash,
-                   gcChecked, trashLocked>>
+    /\ phase' = [phase EXCEPT ![t] = "running"]
+    /\ UNCHANGED <<heap, trash, refs, lockOwner, lockedHash>>
 
 AcquireTx(t) ==
     /\ phase[t] = "running"
     /\ lockOwner = "none"
-    /\ trashLocked = 0
     /\ lockOwner' = t
     /\ lockedHash' = pending[t]
-    /\ UNCHANGED <<heap, trash, refs, target, pending, phase,
-                   gcChecked, trashLocked>>
+    /\ UNCHANGED <<heap, trash, refs, target, pending, phase>>
 
-UseExisting(t) ==
+CreateOrReuse(t) ==
     /\ phase[t] = "running"
     /\ lockOwner = t
     /\ lockedHash = pending[t]
-    /\ HasHash(heap, pending[t])
-    /\ UNCHANGED <<heap, trash, refs, target, pending, phase,
-                   lockOwner, lockedHash, gcChecked, trashLocked>>
-
-CreateNew(t) ==
-    /\ phase[t] = "running"
-    /\ lockOwner = t
-    /\ lockedHash = pending[t]
-    /\ ~HasHash(heap, pending[t])
-    /\ FreshFor(pending[t]) # {}
-    /\ LET i == CHOOSE x \in FreshFor(pending[t]) : TRUE
-       IN heap' = heap \cup {i}
-    /\ UNCHANGED <<trash, refs, target, pending, phase,
-                   lockOwner, lockedHash, gcChecked, trashLocked>>
+    /\ IF HasHash(heap, pending[t])
+          THEN heap' = heap
+          ELSE heap' = heap \cup {FreshIncarnation(pending[t])}
+    /\ UNCHANGED <<trash, refs, target, pending, phase, lockOwner, lockedHash>>
 
 Publish(t) ==
     /\ phase[t] = "running"
@@ -96,145 +82,82 @@ Publish(t) ==
     /\ lockedHash = pending[t]
     /\ HasHash(heap, pending[t])
     /\ refs' = [refs EXCEPT ![target[t]] = pending[t]]
-    /\ pending' = [pending EXCEPT ![t] = 0]
-    /\ target' = [target EXCEPT ![t] = 0]
     /\ phase' = [phase EXCEPT ![t] = "idle"]
     /\ lockOwner' = "none"
     /\ lockedHash' = 0
-    /\ UNCHANGED <<heap, trash, gcChecked, trashLocked>>
+    /\ UNCHANGED <<heap, trash, target, pending>>
 
-ReleaseTx(t) ==
+CrashTx(t) ==
     /\ phase[t] = "running"
     /\ lockOwner = t
-    /\ lockedHash = pending[t]
     /\ phase' = [phase EXCEPT ![t] = "idle"]
-    /\ target' = [target EXCEPT ![t] = 0]
-    /\ pending' = [pending EXCEPT ![t] = 0]
     /\ lockOwner' = "none"
     /\ lockedHash' = 0
-    /\ UNCHANGED <<heap, trash, refs, gcChecked, trashLocked>>
+    /\ UNCHANGED <<heap, trash, refs, target, pending>>
+
+(***************************************************************************)
+(* Garbage collection                                                      *)
+(***************************************************************************)
 
 AcquireGC(h) ==
-    /\ lockOwner = "none"
-    /\ trashLocked = 0
     /\ h \in Hashes
-    /\ HasHash(heap, h)
+    /\ lockOwner = "none"
     /\ lockOwner' = "gc"
     /\ lockedHash' = h
-    /\ gcChecked' = FALSE
-    /\ UNCHANGED <<heap, trash, refs, target, pending, phase, trashLocked>>
+    /\ UNCHANGED <<heap, trash, refs, target, pending, phase>>
 
-CheckGC ==
+Reclaim ==
     /\ lockOwner = "gc"
     /\ lockedHash \in Hashes
-    /\ HasHash(heap, lockedHash)
-    /\ gcChecked' = TRUE
-    /\ UNCHANGED <<heap, trash, refs, target, pending, phase,
-                   lockOwner, lockedHash, trashLocked>>
-
-RenameToTrash ==
-    /\ lockOwner = "gc"
-    /\ gcChecked = TRUE
-    /\ lockedHash \in Hashes
-    /\ HasHash(heap, lockedHash)
     /\ ~Reachable(lockedHash)
+    /\ HasHash(heap, lockedHash)
     /\ LET i == CHOOSE x \in heap : HashOf(x) = lockedHash
        IN /\ heap' = heap \ {i}
           /\ trash' = trash \cup {i}
     /\ lockOwner' = "none"
     /\ lockedHash' = 0
-    /\ gcChecked' = FALSE
-    /\ UNCHANGED <<refs, target, pending, phase, trashLocked>>
+    /\ UNCHANGED <<refs, target, pending, phase>>
 
-CancelGC ==
+SkipGC ==
     /\ lockOwner = "gc"
-    /\ gcChecked = TRUE
     /\ lockedHash \in Hashes
     /\ Reachable(lockedHash)
     /\ lockOwner' = "none"
     /\ lockedHash' = 0
-    /\ gcChecked' = FALSE
-    /\ UNCHANGED <<heap, trash, refs, target, pending, phase, trashLocked>>
-
-AcquireTrashGC(h) ==
-    /\ lockOwner = "none"
-    /\ trashLocked = 0
-    /\ h \in Hashes
-    /\ \E i \in trash : HashOf(i) = h
-    /\ trashLocked' = h
-    /\ UNCHANGED <<heap, trash, refs, target, pending, phase,
-                   lockOwner, lockedHash, gcChecked>>
-
-DeleteTrash(h) ==
-    /\ trashLocked = h
-    /\ \A r \in Refs : refs[r] # h
-    /\ LET candidates ==
-              {i \in trash : HashOf(i) = h}
-       IN /\ trash' = trash \ candidates
-    /\ trashLocked' = 0
-    /\ UNCHANGED <<heap, refs, target, pending, phase,
-                   lockOwner, lockedHash, gcChecked>>
-
-SkipTrash ==
-    /\ trashLocked \in Hashes
-    /\ Reachable(trashLocked)
-    /\ trashLocked' = 0
-    /\ UNCHANGED <<heap, trash, refs, target, pending, phase,
-                   lockOwner, lockedHash, gcChecked>>
-
-CrashTx(t) ==
-    /\ phase[t] = "running"
-    /\ IF lockOwner = t
-          THEN /\ lockOwner' = "none"
-               /\ lockedHash' = 0
-          ELSE /\ UNCHANGED <<lockOwner, lockedHash>>
-    /\ phase' = [phase EXCEPT ![t] = "idle"]
-    /\ target' = [target EXCEPT ![t] = 0]
-    /\ pending' = [pending EXCEPT ![t] = 0]
-    /\ UNCHANGED <<heap, trash, refs, gcChecked, trashLocked>>
+    /\ UNCHANGED <<heap, trash, refs, target, pending, phase>>
 
 CrashGC ==
     /\ lockOwner = "gc"
     /\ lockOwner' = "none"
     /\ lockedHash' = 0
-    /\ gcChecked' = FALSE
-    /\ UNCHANGED <<heap, trash, refs, target, pending, phase, trashLocked>>
+    /\ UNCHANGED <<heap, trash, refs, target, pending, phase>>
 
-CrashTrashGC ==
-    /\ trashLocked \in Hashes
-    /\ trashLocked' = 0
-    /\ UNCHANGED <<heap, trash, refs, target, pending, phase,
-                   lockOwner, lockedHash, gcChecked>>
+(***************************************************************************)
+(* Next                                                                    *)
+(***************************************************************************)
 
 Next ==
     \/ \E t \in Transactions, r \in Refs, h \in Hashes :
-          Start(t, r, h)
+           Start(t, r, h)
     \/ \E t \in Transactions : AcquireTx(t)
-    \/ \E t \in Transactions : UseExisting(t)
-    \/ \E t \in Transactions : CreateNew(t)
+    \/ \E t \in Transactions : CreateOrReuse(t)
     \/ \E t \in Transactions : Publish(t)
-    \/ \E t \in Transactions : ReleaseTx(t)
     \/ \E t \in Transactions : CrashTx(t)
     \/ \E h \in Hashes : AcquireGC(h)
-    \/ CheckGC
-    \/ RenameToTrash
-    \/ CancelGC
+    \/ Reclaim
+    \/ SkipGC
     \/ CrashGC
-    \/ \E h \in Hashes : AcquireTrashGC(h)
-    \/ \E h \in Hashes : DeleteTrash(h)
-    \/ SkipTrash
-    \/ CrashTrashGC
 
 Spec ==
     Init /\ [][Next]_vars
 
+(***************************************************************************)
+(* Safety properties                                                       *)
+(***************************************************************************)
+
 RefIntegrity ==
     \A r \in Refs :
         refs[r] = 0 \/ HasHash(heap, refs[r])
-
-TrashObjectsAreNotLive ==
-    \A i \in trash :
-        i \notin heap
 
 HeapTrashDisjoint ==
     heap \cap trash = {}
@@ -247,24 +170,14 @@ TxLockConsistency ==
     \A t \in Transactions :
         lockOwner = t => phase[t] = "running"
 
-GCCheckConsistency ==
-    gcChecked => lockOwner = "gc"
-
-TrashLockConsistency ==
-    trashLocked # 0 => trashLocked \in Hashes
-
-NoSimultaneousLocks ==
-    /\ lockOwner # "none" => trashLocked = 0
-    /\ trashLocked # 0 => lockOwner = "none"
+(***************************************************************************)
+(* Invariants                                                              *)
+(***************************************************************************)
 
 Invariant ==
     /\ RefIntegrity
-    /\ TrashObjectsAreNotLive
     /\ HeapTrashDisjoint
     /\ LockConsistency
     /\ TxLockConsistency
-    /\ GCCheckConsistency
-    /\ TrashLockConsistency
-    /\ NoSimultaneousLocks
 
 =============================================================================
