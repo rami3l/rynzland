@@ -22,10 +22,12 @@ VARIABLES
     pending,
     phase,
     lockOwner,
-    lockedHash
+    lockedHash,
+    gcChecked
 
 vars ==
-    <<heap, trash, refs, target, pending, phase, lockOwner, lockedHash>>
+    <<heap, trash, refs, target, pending, phase,
+      lockOwner, lockedHash, gcChecked>>
 
 HashOf(i) == i.hash
 
@@ -36,6 +38,9 @@ FreshFor(h) ==
     {i \in Incarnations :
         HashOf(i) = h /\ i \notin heap /\ i \notin trash}
 
+Reachable(h) ==
+    \E r \in Refs : refs[r] = h
+
 Init ==
     /\ heap = {}
     /\ trash = {}
@@ -45,6 +50,7 @@ Init ==
     /\ phase = [t \in Transactions |-> "idle"]
     /\ lockOwner = "none"
     /\ lockedHash = 0
+    /\ gcChecked = FALSE
 
 Start(t, r, h) ==
     /\ phase[t] = "idle"
@@ -53,21 +59,22 @@ Start(t, r, h) ==
     /\ phase' = [phase EXCEPT ![t] = "running"]
     /\ target' = [target EXCEPT ![t] = r]
     /\ pending' = [pending EXCEPT ![t] = h]
-    /\ UNCHANGED <<heap, trash, refs, lockOwner, lockedHash>>
+    /\ UNCHANGED <<heap, trash, refs, lockOwner, lockedHash, gcChecked>>
 
 AcquireTx(t) ==
     /\ phase[t] = "running"
     /\ lockOwner = "none"
     /\ lockOwner' = t
     /\ lockedHash' = pending[t]
-    /\ UNCHANGED <<heap, trash, refs, target, pending, phase>>
+    /\ UNCHANGED <<heap, trash, refs, target, pending, phase, gcChecked>>
 
 UseExisting(t) ==
     /\ phase[t] = "running"
     /\ lockOwner = t
     /\ lockedHash = pending[t]
     /\ HasHash(heap, pending[t])
-    /\ UNCHANGED <<heap, trash, refs, target, pending, phase, lockOwner, lockedHash>>
+    /\ UNCHANGED <<heap, trash, refs, target, pending, phase,
+                   lockOwner, lockedHash, gcChecked>>
 
 CreateNew(t) ==
     /\ phase[t] = "running"
@@ -77,7 +84,8 @@ CreateNew(t) ==
     /\ FreshFor(pending[t]) # {}
     /\ LET i == CHOOSE x \in FreshFor(pending[t]) : TRUE
        IN heap' = heap \cup {i}
-    /\ UNCHANGED <<trash, refs, target, pending, phase, lockOwner, lockedHash>>
+    /\ UNCHANGED <<trash, refs, target, pending, phase,
+                   lockOwner, lockedHash, gcChecked>>
 
 Publish(t) ==
     /\ phase[t] = "running"
@@ -90,7 +98,7 @@ Publish(t) ==
     /\ phase' = [phase EXCEPT ![t] = "idle"]
     /\ lockOwner' = "none"
     /\ lockedHash' = 0
-    /\ UNCHANGED <<heap, trash>>
+    /\ UNCHANGED <<heap, trash, gcChecked>>
 
 ReleaseTx(t) ==
     /\ phase[t] = "running"
@@ -101,7 +109,7 @@ ReleaseTx(t) ==
     /\ pending' = [pending EXCEPT ![t] = 0]
     /\ lockOwner' = "none"
     /\ lockedHash' = 0
-    /\ UNCHANGED <<heap, trash, refs>>
+    /\ UNCHANGED <<heap, trash, refs, gcChecked>>
 
 AcquireGC(h) ==
     /\ lockOwner = "none"
@@ -109,32 +117,46 @@ AcquireGC(h) ==
     /\ HasHash(heap, h)
     /\ lockOwner' = "gc"
     /\ lockedHash' = h
+    /\ gcChecked' = FALSE
     /\ UNCHANGED <<heap, trash, refs, target, pending, phase>>
 
-RecheckAndMoveGC ==
+CheckGC ==
     /\ lockOwner = "gc"
     /\ lockedHash \in Hashes
     /\ HasHash(heap, lockedHash)
-    /\ \A r \in Refs : refs[r] # lockedHash
+    /\ gcChecked' = TRUE
+    /\ UNCHANGED <<heap, trash, refs, target, pending, phase,
+                   lockOwner, lockedHash>>
+
+RenameToTrash ==
+    /\ lockOwner = "gc"
+    /\ gcChecked = TRUE
+    /\ lockedHash \in Hashes
+    /\ HasHash(heap, lockedHash)
+    /\ ~Reachable(lockedHash)
     /\ LET i == CHOOSE x \in heap : HashOf(x) = lockedHash
        IN /\ heap' = heap \ {i}
           /\ trash' = trash \cup {i}
     /\ lockOwner' = "none"
     /\ lockedHash' = 0
+    /\ gcChecked' = FALSE
     /\ UNCHANGED <<refs, target, pending, phase>>
 
-SkipGC ==
+CancelGC ==
     /\ lockOwner = "gc"
+    /\ gcChecked = TRUE
     /\ lockedHash \in Hashes
-    /\ \E r \in Refs : refs[r] = lockedHash
+    /\ Reachable(lockedHash)
     /\ lockOwner' = "none"
     /\ lockedHash' = 0
+    /\ gcChecked' = FALSE
     /\ UNCHANGED <<heap, trash, refs, target, pending, phase>>
 
 DeleteTrash(i) ==
     /\ i \in trash
     /\ trash' = trash \ {i}
-    /\ UNCHANGED <<heap, refs, target, pending, phase, lockOwner, lockedHash>>
+    /\ UNCHANGED <<heap, refs, target, pending, phase,
+                   lockOwner, lockedHash, gcChecked>>
 
 CrashTx(t) ==
     /\ phase[t] = "running"
@@ -145,12 +167,13 @@ CrashTx(t) ==
     /\ phase' = [phase EXCEPT ![t] = "idle"]
     /\ target' = [target EXCEPT ![t] = 0]
     /\ pending' = [pending EXCEPT ![t] = 0]
-    /\ UNCHANGED <<heap, trash, refs>>
+    /\ UNCHANGED <<heap, trash, refs, gcChecked>>
 
 CrashGC ==
     /\ lockOwner = "gc"
     /\ lockOwner' = "none"
     /\ lockedHash' = 0
+    /\ gcChecked' = FALSE
     /\ UNCHANGED <<heap, trash, refs, target, pending, phase>>
 
 Next ==
@@ -163,8 +186,9 @@ Next ==
     \/ \E t \in Transactions : ReleaseTx(t)
     \/ \E t \in Transactions : CrashTx(t)
     \/ \E h \in Hashes : AcquireGC(h)
-    \/ RecheckAndMoveGC
-    \/ SkipGC
+    \/ CheckGC
+    \/ RenameToTrash
+    \/ CancelGC
     \/ CrashGC
     \/ \E i \in Incarnations : DeleteTrash(i)
 
@@ -190,11 +214,15 @@ TxLockConsistency ==
     \A t \in Transactions :
         lockOwner = t => phase[t] = "running"
 
+GCCheckConsistency ==
+    gcChecked => lockOwner = "gc"
+
 Invariant ==
     /\ RefIntegrity
     /\ TrashObjectsAreNotLive
     /\ HeapTrashDisjoint
     /\ LockConsistency
     /\ TxLockConsistency
+    /\ GCCheckConsistency
 
 =============================================================================
