@@ -32,10 +32,8 @@ TypeOK ==
     /\ phase \in [Transactions -> {"idle", "running"}]
     /\ lockOwner \in [Hashes -> (Actors \cup {"none"})]
 
-HashOf(i) == i.hash
-
 HasHash(s, h) ==
-    \E i \in s : HashOf(i) = h
+    \E i \in s : i.hash = h
 
 Reachable(h) ==
     \E r \in Refs : refs[r] = h
@@ -133,7 +131,7 @@ CollectGC(h) ==
     /\ lockOwner[h] = "gc"
     /\ HasHash(heap, h)
     /\ ~Reachable(h)
-    /\ LET i == CHOOSE x \in heap : HashOf(x) = h
+    /\ LET i == CHOOSE x \in heap : x.hash = h
        IN /\ heap' = heap \ {i}
           /\ trash' = trash \cup {i}
     /\ lockOwner' = [lockOwner EXCEPT ![h] = "none"]
