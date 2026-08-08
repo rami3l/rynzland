@@ -1,0 +1,35 @@
+2026-08-10T11:20:15,248 [main] INFO  a.f.a.t.Tool$ - # APALACHE version: 0.47.0 | build: 2c576d8
+2026-08-10T11:20:15,260 [main] INFO  a.f.a.i.p.o.OptionGroup$ -   > RustupGC.cfg: Loading TLC configuration
+2026-08-10T11:20:15,294 [main] INFO  a.f.a.i.p.o.OptionGroup$ -   > Using inv predicate(s) Invariant from the TLC config
+2026-08-10T11:20:15,295 [main] INFO  a.f.a.t.t.o.CheckCmd - Tuning: search.outputTraces=false
+2026-08-10T11:20:15,405 [main] INFO  a.f.a.i.p.PassChainExecutor$ - PASS #0: SanyParser
+2026-08-10T11:20:15,561 [main] DEBUG a.f.a.i.p.PassChainExecutor$ - PASS #0: SanyParser [OK]
+2026-08-10T11:20:15,562 [main] INFO  a.f.a.i.p.PassChainExecutor$ - PASS #1: TypeCheckerSnowcat
+2026-08-10T11:20:15,562 [main] INFO  a.f.a.t.p.t.EtcTypeCheckerPassImpl -  > Running Snowcat .::.
+2026-08-10T11:20:15,606 [main] DEBUG a.f.a.i.p.PassChainExecutor$ - Adapted exception intercepted: 
+at.forsyte.apalache.tla.typecheck.TypingInputException: Found imprecise record types, while Type System 1.2 is enabled. Either update the annotations, or use --features=no-rows.
+	at at.forsyte.apalache.tla.typecheck.TypeCheckerTool.ensureTypeSystem12(TypeCheckerTool.scala:257)
+	at at.forsyte.apalache.tla.typecheck.TypeCheckerTool.$anonfun$parseTypeAnnotations$4(TypeCheckerTool.scala:153)
+	at scala.collection.StrictOptimizedIterableOps.map(StrictOptimizedIterableOps.scala:100)
+	at scala.collection.StrictOptimizedIterableOps.map$(StrictOptimizedIterableOps.scala:87)
+	at scala.collection.mutable.HashMap.map(HashMap.scala:35)
+	at at.forsyte.apalache.tla.typecheck.TypeCheckerTool.parseTypeAnnotations(TypeCheckerTool.scala:145)
+	at at.forsyte.apalache.tla.typecheck.TypeCheckerTool.check(TypeCheckerTool.scala:37)
+	at at.forsyte.apalache.tla.passes.typecheck.EtcTypeCheckerPassImpl.execute(EtcTypeCheckerPassImpl.scala:54)
+	at at.forsyte.apalache.infra.passes.PassChainExecutor$.exec(PassChainExecutor.scala:64)
+	at at.forsyte.apalache.infra.passes.PassChainExecutor$.$anonfun$runPassOnModule$3(PassChainExecutor.scala:53)
+	at scala.util.Either.flatMap(Either.scala:360)
+	at at.forsyte.apalache.infra.passes.PassChainExecutor$.$anonfun$runPassOnModule$1(PassChainExecutor.scala:51)
+	at scala.collection.LinearSeqOps.foldLeft(LinearSeq.scala:183)
+	at scala.collection.LinearSeqOps.foldLeft$(LinearSeq.scala:179)
+	at scala.collection.immutable.List.foldLeft(List.scala:79)
+	at at.forsyte.apalache.infra.passes.PassChainExecutor$.runOnPasses(PassChainExecutor.scala:44)
+	at at.forsyte.apalache.infra.passes.PassChainExecutor$.run(PassChainExecutor.scala:34)
+	at at.forsyte.apalache.tla.tooling.opt.CheckCmd.run(CheckCmd.scala:136)
+	at at.forsyte.apalache.tla.Tool$.runCommand(Tool.scala:139)
+	at at.forsyte.apalache.tla.Tool$.run(Tool.scala:119)
+	at at.forsyte.apalache.tla.Tool$.main(Tool.scala:40)
+	at at.forsyte.apalache.tla.Tool.main(Tool.scala)
+2026-08-10T11:20:15,614 [main] ERROR a.f.a.t.Tool$ - RustupGC.tla:25:5-25:9: type input error: Found imprecise record types, while Type System 1.2 is enabled. Either update the annotations, or use --features=no-rows.
+2026-08-10T11:20:15,615 [main] INFO  a.f.a.t.Tool$ - It took me 0 days  0 hours  0 min  0 sec
+2026-08-10T11:20:15,615 [main] INFO  a.f.a.t.Tool$ - Total time: 0.365 sec

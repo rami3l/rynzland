@@ -1,0 +1,1 @@
+ simulate --config=spec/RustupGC.cfg spec/RustupGC.tla

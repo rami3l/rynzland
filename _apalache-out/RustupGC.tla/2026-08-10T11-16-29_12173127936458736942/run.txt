@@ -1,0 +1,1 @@
+ check --config=spec/RustupGC.cfg spec/RustupGC.tla

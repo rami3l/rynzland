@@ -1,0 +1,15 @@
+2026-08-10T11:21:42,696 [main] INFO  a.f.a.t.Tool$ - # APALACHE version: 0.47.0 | build: 2c576d8
+2026-08-10T11:21:42,708 [main] INFO  a.f.a.i.p.o.OptionGroup$ -   > RustupGC.cfg: Loading TLC configuration
+2026-08-10T11:21:42,743 [main] INFO  a.f.a.i.p.o.OptionGroup$ -   > Using inv predicate(s) Invariant from the TLC config
+2026-08-10T11:21:42,744 [main] INFO  a.f.a.t.t.o.CheckCmd - Tuning: search.outputTraces=false
+2026-08-10T11:21:42,851 [main] INFO  a.f.a.i.p.PassChainExecutor$ - PASS #0: SanyParser
+2026-08-10T11:21:43,005 [main] DEBUG a.f.a.i.p.PassChainExecutor$ - PASS #0: SanyParser [OK]
+2026-08-10T11:21:43,005 [main] INFO  a.f.a.i.p.PassChainExecutor$ - PASS #1: TypeCheckerSnowcat
+2026-08-10T11:21:43,005 [main] INFO  a.f.a.t.p.t.EtcTypeCheckerPassImpl -  > Running Snowcat .::.
+2026-08-10T11:21:43,099 [main] ERROR a.f.a.t.p.t.LoggingTypeCheckerListener - [RustupGC.tla:51:18-51:23]: Cannot apply i to the argument "hash" in i["hash"].
+2026-08-10T11:21:43,103 [main] ERROR a.f.a.t.p.t.LoggingTypeCheckerListener - [RustupGC.tla:50:1-51:27]: Error when computing the type of HasHash
+2026-08-10T11:21:43,104 [main] INFO  a.f.a.t.p.t.EtcTypeCheckerPassImpl -  > Snowcat asks you to fix the types. Meow.
+2026-08-10T11:21:43,119 [main] DEBUG a.f.a.i.p.PassChainExecutor$ - PASS #1: TypeCheckerSnowcat [FAIL]
+2026-08-10T11:21:43,119 [main] INFO  a.f.a.t.Tool$ - Checker has found an error
+2026-08-10T11:21:43,119 [main] INFO  a.f.a.t.Tool$ - It took me 0 days  0 hours  0 min  0 sec
+2026-08-10T11:21:43,119 [main] INFO  a.f.a.t.Tool$ - Total time: 0.421 sec
