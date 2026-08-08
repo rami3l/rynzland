@@ -73,13 +73,12 @@ AcquireTx(t) ==
     /\ lockOwner' = [lockOwner EXCEPT ![pending[t]] = t]
     /\ UNCHANGED <<heap, trash, refs, target, pending, phase>>
 
-CreateOrReuse(t) ==
+Create(t) ==
     /\ phase[t] = "running"
     /\ pending[t] \in Hashes
     /\ lockOwner[pending[t]] = t
-    /\ IF HasHash(heap, pending[t])
-          THEN heap' = heap
-          ELSE heap' = heap \cup {FreshIncarnation(pending[t])}
+    /\ ~HasHash(heap, pending[t])
+    /\ heap' = heap \cup {FreshIncarnation(pending[t])}
     /\ UNCHANGED <<trash, refs, target, pending, phase, lockOwner>>
 
 Publish(t) ==
@@ -93,16 +92,6 @@ Publish(t) ==
     /\ phase' = [phase EXCEPT ![t] = "idle"]
     /\ lockOwner' = [lockOwner EXCEPT ![pending[t]] = "none"]
     /\ UNCHANGED <<heap, trash>>
-
-ReleaseTx(t) ==
-    /\ phase[t] = "running"
-    /\ pending[t] \in Hashes
-    /\ lockOwner[pending[t]] = t
-    /\ phase' = [phase EXCEPT ![t] = "idle"]
-    /\ target' = [target EXCEPT ![t] = "none"]
-    /\ pending' = [pending EXCEPT ![t] = 0]
-    /\ lockOwner' = [lockOwner EXCEPT ![pending[t]] = "none"]
-    /\ UNCHANGED <<heap, trash, refs>>
 
 CrashTx(t) ==
     /\ phase[t] = "running"
@@ -159,9 +148,8 @@ Next ==
     \/ \E t \in Transactions, r \in Refs, h \in Hashes :
           Start(t, r, h)
     \/ \E t \in Transactions : AcquireTx(t)
-    \/ \E t \in Transactions : CreateOrReuse(t)
+    \/ \E t \in Transactions : Create(t)
     \/ \E t \in Transactions : Publish(t)
-    \/ \E t \in Transactions : ReleaseTx(t)
     \/ \E t \in Transactions : CrashTx(t)
     \/ \E h \in Hashes : AcquireGC(h)
     \/ \E h \in Hashes : CrashGC(h)
