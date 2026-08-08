@@ -1,0 +1,6 @@
+*.toolbox/**/*
+*.pdf
+*.old
+*.out
+states/
+**/*~
