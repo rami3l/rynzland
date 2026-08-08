@@ -50,4 +50,4 @@ jobs:
         run: wget https://nightly.tlapl.us/dist/tla2tools.jar
 
       - name: Run TLC
-        run: java -Dtlc2.TLC.stopAfter=1800 -Dtlc2.TLC.ide=Github -cp tla2tools.jar tlc2.TLC -workers auto -lncheck final -checkpoint 60 -coverage 60 -tool -deadlock spec/rustup_gc
+        run: java -Dtlc2.TLC.stopAfter=1800 -Dtlc2.TLC.ide=Github -cp tla2tools.jar tlc2.TLC -workers auto -lncheck final -checkpoint 60 -coverage 60 -tool -deadlock spec/RustupGC
