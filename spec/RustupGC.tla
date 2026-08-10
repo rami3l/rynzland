@@ -54,11 +54,11 @@ HasHash(s, h) ==
 Reachable(h) ==
     \E r \in Refs : refs[r] = h
 
-FreshIncarnation(h) ==
-    CHOOSE i \in Incarnations :
+FreshFor(h) ==
+    {i \in Incarnations :
         /\ i.hash = h
         /\ i \notin heap
-        /\ i \notin trash
+        /\ i \notin trash}
 
 Init ==
     /\ heap = {}
@@ -94,7 +94,9 @@ Create(t) ==
     /\ pending[t] \in Hashes
     /\ lockOwner[pending[t]] = t
     /\ ~HasHash(heap, pending[t])
-    /\ heap' = heap \cup {FreshIncarnation(pending[t])}
+    /\ FreshFor(pending[t]) # {}
+    /\ LET i == CHOOSE x \in FreshFor(pending[t]) : TRUE
+       IN heap' = heap \cup {i}
     /\ UNCHANGED <<trash, refs, target, pending, phase, lockOwner>>
 
 Publish(t) ==
@@ -139,18 +141,9 @@ CollectGC(h) ==
     /\ LET i == CHOOSE x \in heap : x.hash = h
        IN /\ heap' = heap \ {i}
           /\ trash' = trash \cup {i}
-    /\ lockOwner' = [lockOwner EXCEPT ![h] = "none"]
-    /\ UNCHANGED <<refs, target, pending, phase>>
+    /\ UNCHANGED <<refs, target, pending, phase, lockOwner>>
 
-SkipGC(h) ==
-    /\ h \in Hashes
-    /\ lockOwner[h] = "gc"
-    /\ HasHash(heap, h)
-    /\ Reachable(h)
-    /\ lockOwner' = [lockOwner EXCEPT ![h] = "none"]
-    /\ UNCHANGED <<heap, trash, refs, target, pending, phase>>
-
-CrashGC(h) ==
+ReleaseOrCrashGC(h) ==
     /\ h \in Hashes
     /\ lockOwner[h] = "gc"
     /\ lockOwner' = [lockOwner EXCEPT ![h] = "none"]
@@ -168,7 +161,8 @@ Next ==
     \/ \E t \in Transactions : Publish(t)
     \/ \E t \in Transactions : CrashTx(t)
     \/ \E h \in Hashes : AcquireGC(h)
-    \/ \E h \in Hashes : CrashGC(h)
+    \/ \E h \in Hashes : CollectGC(h)
+    \/ \E h \in Hashes : ReleaseOrCrashGC(h)
 
 Spec ==
     Init /\ [][Next]_vars
