@@ -2,19 +2,13 @@
 
 EXTENDS Naturals, FiniteSets
 
-Refs == {"stable", "nightly"}
-Hashes == {1, 2, 3}
-Transactions == {"tx1", "tx2", "tx3"}
+CONSTANTS Refs, Hashes, Transactions, IncarnationIds
+
 Actors == Transactions \cup {"gc"}
 
 Incarnations ==
-    {[hash |-> 1, id |-> 1],
-     [hash |-> 1, id |-> 2],
-     [hash |-> 1, id |-> 3],
-     [hash |-> 2, id |-> 1],
-     [hash |-> 2, id |-> 2],
-     [hash |-> 3, id |-> 1],
-     [hash |-> 3, id |-> 2]}
+    {[hash |-> h, id |-> i]
+        : h \in Hashes, i \in IncarnationIds}
 
 VARIABLES
     heap, trash, refs, target, pending, phase, lockOwner
