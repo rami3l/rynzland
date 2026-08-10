@@ -48,3 +48,6 @@ jobs:
 
       - name: Run TLC
         run: make
+
+      - name: Run Apalache
+        run: make apalache-simulate

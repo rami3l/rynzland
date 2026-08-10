@@ -19,6 +19,10 @@ apalache: $(APALACHE)
 	$< check --config=spec/RustupGC.cfg spec/RustupGC.tla
 .PHONY: apalache
 
+apalache-simulate: $(APALACHE)
+	$< simulate --config=spec/RustupGC.cfg spec/RustupGC.tla
+.PHONY: apalache-simulate
+
 $(APALACHE): $(TLA_BASE)/apalache.tgz
 	tar -xzf $< -C $(TLA_BASE)
 	touch $@
