@@ -1,3 +1,4 @@
-/target
-/home
 /_apalache-out
+/home
+/states
+/target
