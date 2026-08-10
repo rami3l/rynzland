@@ -2,7 +2,15 @@
 
 EXTENDS Naturals, FiniteSets
 
-CONSTANTS Refs, Hashes, Transactions, IncarnationIds
+CONSTANTS
+    \* @type: Set(Str);
+    Refs,
+    \* @type: Set(Int);
+    Hashes,
+    \* @type: Set(Str);
+    Transactions,
+    \* @type: Set(Int);
+    IncarnationIds
 
 Actors == Transactions \cup {"gc"}
 
@@ -11,7 +19,20 @@ Incarnations ==
         : h \in Hashes, i \in IncarnationIds}
 
 VARIABLES
-    heap, trash, refs, target, pending, phase, lockOwner
+    \* @type: Set({hash: Int, id: Int});
+    heap,
+    \* @type: Set({hash: Int, id: Int});
+    trash,
+    \* @type: Str -> Int;
+    refs,
+    \* @type: Str -> Str;
+    target,
+    \* @type: Str -> Int;
+    pending,
+    \* @type: Str -> Str;
+    phase,
+    \* @type: Int -> Str;
+    lockOwner
 
 vars ==
     <<heap, trash, refs, target, pending, phase, lockOwner>>
@@ -26,6 +47,7 @@ TypeOK ==
     /\ phase \in [Transactions -> {"idle", "running"}]
     /\ lockOwner \in [Hashes -> (Actors \cup {"none"})]
 
+\* @type: (Set({hash: Int, id: Int}), Int) => Bool;
 HasHash(s, h) ==
     \E i \in s : i.hash = h
 
