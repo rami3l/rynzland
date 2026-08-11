@@ -164,6 +164,8 @@ Next ==
     \/ \E h \in Hashes : CollectGC(h)
     \/ \E h \in Hashes : ReleaseOrCrashGC(h)
 
+Spec == Init /\ [][Next]_vars
+
 TxStep(t) ==
     \/ AcquireTx(t)
     \/ Create(t)
