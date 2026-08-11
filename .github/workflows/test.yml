@@ -40,7 +40,7 @@ jobs:
       - name: Run heavy tests
         run: cargo test --workspace -- --ignored
 
-  tla:
+  tla-tlc:
     runs-on: ubuntu-latest
 
     steps:
@@ -49,5 +49,11 @@ jobs:
       - name: Run TLC
         run: make
 
+  tla-apalache:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v6
+
       - name: Run Apalache
-        run: make apalache-simulate
+        run: make apalache
