@@ -69,9 +69,9 @@ Init ==
     /\ phase = [t \in Transactions |-> "idle"]
     /\ lockOwner = [h \in Hashes |-> "none"]
 
-(***************************************************************************)
-(* Transaction                                                             *)
-(***************************************************************************)
+\****************************************************************************
+\* Transaction
+\****************************************************************************
 
 Start(t, r, h) ==
     /\ phase[t] = "idle"
@@ -122,9 +122,9 @@ CrashTx(t) ==
     /\ pending' = [pending EXCEPT ![t] = 0]
     /\ UNCHANGED <<heap, trash, refs>>
 
-(***************************************************************************)
-(* Garbage collection                                                      *)
-(***************************************************************************)
+\***************************************************************************
+\* Garbage collection
+\***************************************************************************
 
 AcquireGC(h) ==
     /\ h \in Hashes
@@ -149,9 +149,9 @@ ReleaseOrCrashGC(h) ==
     /\ lockOwner' = [lockOwner EXCEPT ![h] = "none"]
     /\ UNCHANGED <<heap, trash, refs, target, pending, phase>>
 
-(***************************************************************************)
-(* Next                                                                    *)
-(***************************************************************************)
+\****************************************************************************
+\* Next
+\****************************************************************************
 
 Next ==
     \/ \E t \in Transactions, r \in Refs, h \in Hashes :
@@ -164,12 +164,26 @@ Next ==
     \/ \E h \in Hashes : CollectGC(h)
     \/ \E h \in Hashes : ReleaseOrCrashGC(h)
 
-Spec ==
-    Init /\ [][Next]_vars
+TxStep(t) ==
+    \/ AcquireTx(t)
+    \/ Create(t)
+    \/ Publish(t)
+    \/ CrashTx(t)
 
-(***************************************************************************)
-(* Invariants                                                              *)
-(***************************************************************************)
+FairSpec ==
+    /\ Spec
+    \* Once a transaction can proceed, it will eventually take a step.
+    /\ \A t \in Transactions : WF_vars(TxStep(t))
+    \* GC cannot hold the object lock forever.
+    /\ \A h \in Hashes : WF_vars(ReleaseOrCrashGC(h))
+    \* GC will eventually acquire the object lock if given the opportunity infinitely often.
+    /\ \A h \in Hashes : SF_vars(AcquireGC(h))
+    \* GC will eventually collect the object if given the opportunity infinitely often.
+    /\ \A h \in Hashes : SF_vars(CollectGC(h))
+
+\****************************************************************************
+\* Invariants
+\****************************************************************************
 
 RefIntegrity ==
     \A r \in Refs :
@@ -188,5 +202,26 @@ TxLockConsistency ==
             lockOwner[h] = t =>
                 /\ phase[t] = "running"
                 /\ pending[t] = h
+
+\****************************************************************************
+\* Properties
+\****************************************************************************
+
+TxTerminates ==
+    \A t \in Transactions :
+        phase[t] = "running" ~> phase[t] = "idle"
+
+LocksEventuallyFree ==
+    \A h \in Hashes :
+        lockOwner[h] # "none" ~> lockOwner[h] = "none"
+
+NoMoreUses(h) ==
+    /\ ~Reachable(h)
+    /\ \A t \in Transactions : pending[t] # h
+
+QuiescentGarbageCollected ==
+    \A h \in Hashes :
+        (<>[] NoMoreUses(h))
+            => (<>[] ~HasHash(heap, h))
 
 =============================================================================
