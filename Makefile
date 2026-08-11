@@ -16,11 +16,11 @@ APALACHE_VERSION := 0.47.0
 APALACHE := $(TLA_BASE)/apalache/bin/apalache-mc
 
 apalache: $(APALACHE)
-	$< check --config=spec/RustupGC.cfg spec/RustupGC.tla
+	$< check --config=spec/RustupGC_apalache.cfg spec/RustupGC.tla
 .PHONY: apalache
 
 apalache-simulate: $(APALACHE)
-	$< simulate --config=spec/RustupGC.cfg spec/RustupGC.tla
+	$< simulate --config=spec/RustupGC_apalache.cfg spec/RustupGC.tla
 .PHONY: apalache-simulate
 
 $(APALACHE): $(TLA_BASE)/apalache.tgz
