@@ -266,7 +266,6 @@ impl AddSubcmd {
             info!("adding toolchain: {toolchain} from source {src} (id: {id})");
         }
 
-        // TODO: Use juntion on Windows
         let src_old = ctx.rustup_home.join("toolchains").join(&*src);
         let src_with_id = ctx.rustup_home.join("toolchains").join(&id);
         let link = ctx.rynzland_home.join("toolchains").join(&*toolchain);
