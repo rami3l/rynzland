@@ -126,11 +126,19 @@ pub fn soft_link(original: &Path, link: &Path) -> Result<()> {
 
         let rel_target =
             diff_paths(original, link.parent().unwrap()).context("malformed FS link path")?;
-        ofs::symlink(&rel_target, link)?;
+        ofs::symlink(&rel_target, link).context(format!(
+            "when trying to symlink to {} at {}",
+            rel_target.display(),
+            link.display()
+        ))?;
     }
 
     #[cfg(windows)]
-    junction::create(original, link)?;
+    junction::create(original, link).context(format!(
+        "when trying to create a junction to {} at {}",
+        original.display(),
+        link.display()
+    ))?;
 
     Ok(())
 }
