@@ -33,7 +33,6 @@ fn setup_and_nuke() -> Result<()> {
     let entries: Vec<_> = home.read_dir()?.collect();
     assert!(entries.is_empty(), "home dir not empty: {entries:#?}");
 
-    drop(ctx);
     Ok(())
 }
 
@@ -43,7 +42,7 @@ fn toolchain_id() -> Result<()> {
     let home = ctx.home();
     let rynzland_home = home.join("rynzland_home");
 
-    // Use a specific version to be deterministic about what `stable` points to.
+    // Use a specific version to be deterministic about what `minor` points to.
     let minor = "1.92";
     let patch = "1.92.0";
 
@@ -58,13 +57,13 @@ fn toolchain_id() -> Result<()> {
         .join("toolchains")
         .join(util::qualify_with_target(minor).as_ref());
     let id_from_disk = IdentifiableToolchain::new(&tc_path)?.id();
+    assert!(id_from_disk.starts_with("1.92.0-b8dxmzztqjmeq-"));
     let id_from_remote = toolchain::resolve_channel(patch, &[])?.id();
     assert_eq!(id_from_disk, id_from_remote);
 
     let id_from_remote_nightly = toolchain::resolve_channel("nightly", &[])?.id();
     assert_ne!(id_from_disk, id_from_remote_nightly);
 
-    drop(ctx);
     Ok(())
 }
 
@@ -159,7 +158,6 @@ fn toolchain_management() -> Result<()> {
         "underlying toolchain should be removed",
     );
 
-    drop(ctx);
     Ok(())
 }
 
@@ -217,7 +215,6 @@ fn update_toolchain_gc() -> Result<()> {
         "v1 toolchain should have been GC'd"
     );
 
-    drop(ctx);
     Ok(())
 }
 
@@ -229,7 +226,6 @@ fn comp_add_rm() -> Result<()> {
 
     let toolchain_name = "1.78";
 
-    // Add stable toolchain
     AddSubcmd {
         toolchain: toolchain_name.into(),
         source: None,
@@ -242,21 +238,21 @@ fn comp_add_rm() -> Result<()> {
 
     let resolve_underlying = |path: &std::path::Path| -> Result<std::path::PathBuf> {
         let link_target = util::soft_link_target(path)?;
-        if link_target.is_relative() {
-            Ok(path.with_file_name(link_target))
+        Ok(if link_target.is_relative() {
+            path.with_file_name(link_target)
         } else {
-            Ok(link_target)
-        }
+            link_target
+        })
     };
 
-    let underlying_1 = resolve_underlying(&link_path)?;
-    assert!(underlying_1.exists(), "Underlying toolchain 1 should exist");
+    let underlying_v1 = resolve_underlying(&link_path)?;
+    assert!(underlying_v1.exists(), "toolchain v1 should exist");
 
     let cargo_name = format!("cargo{}", std::env::consts::EXE_SUFFIX);
-
-    // Cargo bin path in underlying toolchain
-    let cargo_bin_1 = underlying_1.join("bin").join(&cargo_name);
-    assert!(cargo_bin_1.exists(), "Cargo should exist initially");
+    assert!(
+        underlying_v1.join("bin").join(&cargo_name).exists(),
+        "cargo should exist in toolchain v1"
+    );
 
     // Remove cargo
     CompRmSubcmd {
@@ -265,19 +261,18 @@ fn comp_add_rm() -> Result<()> {
     }
     .run(&ctx.app_ctx())?;
 
-    let underlying_2 = resolve_underlying(&link_path)?;
+    let underlying_v2 = resolve_underlying(&link_path)?;
     assert_ne!(
-        underlying_1, underlying_2,
-        "Should point to new underlying toolchain"
+        underlying_v1, underlying_v2,
+        "toolchain v2 should be different from v1 after removing cargo"
     );
 
-    assert!(!underlying_1.exists(), "Old toolchain should be GC'd");
-    assert!(underlying_2.exists(), "New toolchain should exist");
+    assert!(!underlying_v1.exists(), "toolchain v1 should be GC'd");
+    assert!(underlying_v2.exists(), "toolchain v2 should exist");
 
-    let cargo_bin_2 = underlying_2.join("bin").join(&cargo_name);
     assert!(
-        !cargo_bin_2.exists(),
-        "Cargo should be gone in new toolchain"
+        !underlying_v2.join("bin").join(&cargo_name).exists(),
+        "cargo should not exist in toolchain v2 after removal",
     );
 
     // Add cargo back
@@ -287,20 +282,20 @@ fn comp_add_rm() -> Result<()> {
     }
     .run(&ctx.app_ctx())?;
 
-    let underlying_3 = resolve_underlying(&link_path)?;
-    // underlying_2 should be gone
-    assert!(!underlying_2.exists(), "Second toolchain should be GC'd");
-    assert!(underlying_3.exists(), "Third toolchain should exist");
+    let underlying_v3 = resolve_underlying(&link_path)?;
+    assert!(!underlying_v2.exists(), "toolchain v2 should be GC'd");
+    assert!(underlying_v3.exists(), "toolchain v3 should exist");
 
-    let cargo_bin_3 = underlying_3.join("bin").join(&cargo_name);
-    assert!(cargo_bin_3.exists(), "Cargo should be back");
-
-    assert_eq!(
-        underlying_1, underlying_3,
-        "Should return to original toolchain ID/path"
+    assert!(
+        underlying_v3.join("bin").join(&cargo_name).exists(),
+        "cargo should exist in toolchain v3 after adding it back",
     );
 
-    drop(ctx);
+    assert_eq!(
+        underlying_v1, underlying_v3,
+        "toolchain v3 should be the same as v1",
+    );
+
     Ok(())
 }
 
@@ -350,7 +345,6 @@ fn concurrent_add_same() -> Result<()> {
         "underlying toolchain should exist"
     );
 
-    drop(ctx);
     Ok(())
 }
 
@@ -402,7 +396,6 @@ fn concurrent_add_same_underlying() -> Result<()> {
         "underlying toolchain should exist"
     );
 
-    drop(ctx);
     Ok(())
 }
 
@@ -443,7 +436,6 @@ fn concurrent_rm_same() -> Result<()> {
     assert!(successes >= 1, "at least one thread should succeed");
     assert!(!link_path.exists(), "toolchain link should be gone");
 
-    drop(ctx);
     Ok(())
 }
 
@@ -500,11 +492,7 @@ fn concurrent_rm_same_underlying() -> Result<()> {
         .into_iter()
         .filter_map(|it| it.join().expect("thread panicked").ok())
         .count();
-    assert_eq!(
-        successes,
-        toolchains.len(),
-        "all threads should succeed under backoff"
-    );
+    assert_eq!(successes, toolchains.len(), "all threads should succeed");
 
     for toolchain in toolchains {
         let link_path = rynzland_home
@@ -517,7 +505,6 @@ fn concurrent_rm_same_underlying() -> Result<()> {
         "underlying toolchain should be gone",
     );
 
-    drop(ctx);
     Ok(())
 }
 
@@ -588,6 +575,5 @@ fn concurrent_comp_rm_same_target() -> Result<()> {
         "the final pool size should be 2 (the original one + the new one without cargo)",
     );
 
-    drop(ctx);
     Ok(())
 }
