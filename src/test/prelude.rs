@@ -8,17 +8,17 @@ use anyhow::Result;
 use crate::{Ctx as AppCtx, SetupSubcmd};
 
 pub struct Ctx {
-    tempdir: tempfile::TempDir,
+    temp_dir: tempfile::TempDir,
 }
 
 impl Ctx {
     /// Create a new test context with isolated temp dir and an empty `home`.
     pub fn new() -> Result<Self> {
-        let tempdir = tempfile::tempdir()?;
-        let tempdir_path = tempdir.path();
+        let temp_dir = tempfile::Builder::new().prefix("rynzland_test").tempdir()?;
+        let tempdir_path = temp_dir.path();
         fs::create_dir_all(tempdir_path.join("home"))?;
 
-        Ok(Self { tempdir })
+        Ok(Self { temp_dir })
     }
 
     /// Like [`Self::new`], but also runs setup.
@@ -29,7 +29,7 @@ impl Ctx {
     }
 
     pub fn dir(&self) -> &Path {
-        self.tempdir.path()
+        self.temp_dir.path()
     }
 
     pub fn home(&self) -> PathBuf {
