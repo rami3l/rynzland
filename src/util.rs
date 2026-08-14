@@ -4,7 +4,7 @@ use std::{
     fs::{self, File},
     io,
     path::{Path, PathBuf},
-    process::Command,
+    process::{Command, Output},
 };
 
 use anyhow::{Context, Result};
@@ -12,11 +12,11 @@ use anyhow::{Context, Result};
 pub const BUILD_TARGET: &str = env!("TARGET");
 
 pub trait CommandExt {
-    fn run_checked(&mut self) -> Result<()>;
+    fn run_checked(&mut self) -> Result<Output>;
 }
 
 impl CommandExt for Command {
-    fn run_checked(&mut self) -> Result<()> {
+    fn run_checked(&mut self) -> Result<Output> {
         let program = self.get_program().to_string_lossy();
         let args = self
             .get_args()
@@ -51,7 +51,7 @@ impl CommandExt for Command {
             anyhow::bail!("command failed: {cmd_str}\n\nSTDOUT:\n{stdout}\n\nSTDERR:\n{stderr}");
         }
 
-        Ok(())
+        Ok(output)
     }
 }
 

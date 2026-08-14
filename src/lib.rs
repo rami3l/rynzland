@@ -1,6 +1,8 @@
 use std::{
     borrow::Cow,
-    fs, iter,
+    fs,
+    io::{self, Write},
+    iter,
     path::{Path, PathBuf},
     process::Command,
 };
@@ -323,10 +325,16 @@ impl RunSubCmd {
                     .collect(),
             );
         }
-        ctx.set_env_rynzland(&mut Command::new(&ctx.rustup))
+
+        let output = ctx
+            .set_env_rynzland(&mut Command::new(&ctx.rustup))
             .env("RUSTUP_FORCE_ARG0", shim)
             .args(&*args)
-            .run_checked()
+            .run_checked()?;
+        io::stdout().write_all(&output.stdout)?;
+        io::stderr().write_all(&output.stderr)?;
+
+        Ok(())
     }
 }
 
