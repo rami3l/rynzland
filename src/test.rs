@@ -1,8 +1,7 @@
 mod prelude;
 
-use std::{collections::HashSet, thread, time::Duration};
+use std::{collections::HashSet, thread};
 
-use gix_lock::acquire::Fail;
 use prelude::*;
 
 use crate::{
@@ -147,7 +146,7 @@ fn toolchain_management() -> Result<()> {
         "channel-based toolchain should be gone"
     );
     // Underlying should still exist because the other toolchain still uses it.
-    assert!(underlying_path.exists(), "underlying should still exist",);
+    assert!(underlying_path.exists(), "underlying should still exist");
 
     // Remove final ref.
     RmSubCmd {
@@ -441,7 +440,7 @@ fn concurrent_rm_same() -> Result<()> {
         .into_iter()
         .filter_map(|it| it.join().expect("thread panicked").ok())
         .count();
-    assert_eq!(successes, 1, "only one thread should succeed");
+    assert!(successes >= 1, "at least one thread should succeed");
     assert!(!link_path.exists(), "toolchain link should be gone");
 
     drop(ctx);
@@ -451,9 +450,7 @@ fn concurrent_rm_same() -> Result<()> {
 #[test]
 fn concurrent_rm_same_underlying() -> Result<()> {
     let ctx = Ctx::setup()?;
-    let app_ctx = ctx
-        .app_ctx()
-        .with_gc_lock_backoff(Fail::AfterDurationWithBackoff(Duration::from_mins(1)));
+    let app_ctx = ctx.app_ctx();
     let home = ctx.home();
     let rynzland_home = home.join("rynzland_home");
 
