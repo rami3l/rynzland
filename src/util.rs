@@ -1,5 +1,6 @@
 use std::{
     borrow::Cow,
+    ffi::OsStr,
     fs::{self, File},
     io,
     path::{Path, PathBuf},
@@ -85,10 +86,30 @@ pub fn copy_dir_all(src: impl AsRef<Path>, dst: impl AsRef<Path>) -> io::Result<
     Ok(())
 }
 
+/// Maps a `toolchain/` path to a `tmp/` path.
+///
+/// This is done by swapping the parent and adding a `.tmp` suffix to the
+/// filename.
 pub fn with_tmp(path: &Path) -> PathBuf {
-    let mut path = path.as_os_str().to_owned();
-    path.push(".tmp");
-    path.into()
+    let mut name = path
+        .file_name()
+        .expect("path being mapped should have a file name")
+        .to_owned();
+    let mut ancestors = path.ancestors();
+    ancestors.next(); // skip the path itself
+    let toolchains_dir = ancestors
+        .next()
+        .expect("path being mapped should have a parent");
+    assert_eq!(
+        toolchains_dir.file_name(),
+        Some(OsStr::new("toolchains")),
+        "path being mapped should be under `toolchains/`",
+    );
+    let base_dir = ancestors
+        .next()
+        .expect("/toolchains path should have a parent");
+    name.push(".tmp");
+    base_dir.join("tmp").join(name)
 }
 
 pub struct HashEncoder;

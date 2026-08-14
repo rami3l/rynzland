@@ -1,11 +1,12 @@
 use std::{
-    collections::HashSet,
-    ffi::{OsStr, OsString},
+    collections::{HashMap, HashSet},
+    ffi::OsStr,
+    io,
     process::Command,
 };
 
 use anyhow::Result;
-use gix_lock::Marker;
+use itertools::Either;
 use tracing::info;
 
 use crate::{
@@ -14,10 +15,12 @@ use crate::{
 };
 
 impl Ctx {
-    /// Garbage collect all underlying toolchains among `candidates` located in
-    /// `self.rustup_home` that are no longer referenced by any of the toolchain
-    /// links. If `candidates` is `None`, then it defaults to all underlying
-    /// toolchains.
+    /// Garbage collects all objects in the collection `candidates`.
+    ///
+    /// Each candidate is identified with the object ID in `self.rustup_home`.
+    /// When a candidate is found to be unreachable via any of the existing
+    /// references, it will be cleaned up. If `candidates` is `None`, then it
+    /// defaults to all existing objects.
     pub fn gc<S, I>(&self, candidates: impl Into<Option<I>>) -> Result<()>
     where
         S: AsRef<OsStr>,
@@ -30,44 +33,48 @@ impl Ctx {
             return Ok(());
         }
 
-        // Now entering the critical section.
-        let pool = self.rustup_home.join("toolchains");
-        let _lock = Marker::acquire_to_hold_resource(
-            pool.join("pool_gc.lock"),
-            self.gc_lock_backoff,
-            None,
-        )?;
+        // NOTE: Entering the critical section.
+        let mut locks = match candidates {
+            Some(candidates) => Either::Left(candidates.into_iter()),
+            None => Either::Right(
+                self.rustup_home
+                    .join("toolchains")
+                    .read_dir()?
+                    .filter_map(|it| Some(it.ok()?.file_name())),
+            ),
+        }
+        .filter_map(|c| match self.lock_obj(&c.to_string_lossy()) {
+            Ok(lock) => Some(Ok((c, lock))),
+            Err(e) if e.kind() == io::ErrorKind::WouldBlock => None,
+            Err(e) => Some(Err(e.into())),
+        })
+        .collect::<Result<HashMap<_, _>>>()?;
 
-        let mut referenced = HashSet::new();
+        let mut reachable = HashSet::new();
         let walker = self.rynzland_home.join("toolchains").read_dir()?;
         for entry in walker {
             if let Ok(target) = util::soft_link_target(entry?.path())
                 && let Some(name) = target.file_name()
             {
-                referenced.insert(name.to_owned());
+                reachable.insert(name.to_owned());
             }
         }
 
-        let rm = |tc: &OsString| {
+        for tc in &reachable {
+            locks.remove(tc);
+        }
+        for (tc, lock) in locks {
             info!(
-                "underlying toolchain {} is no longer referenced, removing...",
+                "underlying toolchain {} is unreachable, removing...",
                 tc.display(),
             );
+            // HACK: In reality, we should be able to just move the target directory to
+            // `tmp/`. Here, we just call `rustup uninstall` to remove the toolchain.
             self.set_env_local(&mut Command::new(&self.rustup))
                 .arg("uninstall")
                 .arg(tc)
-                .run_checked()
-        };
-
-        let Some(candidates) = &candidates else {
-            for tc in referenced {
-                rm(&tc)?;
-            }
-            return Ok(());
-        };
-
-        for tc in candidates.difference(&referenced) {
-            rm(tc)?;
+                .run_checked()?;
+            drop(lock);
         }
         Ok(())
     }
