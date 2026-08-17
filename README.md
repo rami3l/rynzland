@@ -33,20 +33,23 @@ At the same time, the introduction of a pool of toolchains also opens up the
 possibility of sharing toolchains between multiple rustup channels, which will
 hopefully address some long-standing issues regarding rustup's disk space usage.
 
+For a more detailed discussion of the final design ideas this PoC is trying to
+play with, see [DESIGN.md](./DESIGN.md).
+
 ## Checklist
 
 This new system is still a work in progress, and many details need to be sorted
 out. Currently, it is designed as a `rustup` wrapper that simulates the behavior
 of a single `rustup` installation by running the same version-pinned `rustup`
-binary over two different instances of `$RUSTUP_HOME`, one for the pool and
-another for the proxies.
+binary over two different instances of `$RUSTUP_HOME`: one for the pool (called
+`rustup`) and another for the proxies (called `rynzland`).
 
 Some basic features that should be implemented include:
 
 - [x] Initial setup for both instances.
 - [x] Installing a new toolchain.
 - [x] Removing an existing toolchain.
-- [x] Garbage-collecting unreferenced toolchains in the pool.
+- [x] Garbage-collecting unreachable toolchains in the pool.
 - [x] Uniquely identifying toolchains in the pool based on version and
       components.
 - [x] Identifying channels that can be updated.
