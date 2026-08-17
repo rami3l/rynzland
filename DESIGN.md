@@ -1,4 +1,4 @@
-# Proposal: Locked Rustup via a Toolchain Pool
+# Proposal: Locked Rustup via a Toolchain Pool v2
 
 ## Status Quo
 
@@ -12,7 +12,7 @@ The problem is very simple: rustup as it currently stands has no defense
 mechanisms against concurrent changes to the same toolchain.
 
 When installing/updating/uninstalling a toolchain, a "transaction" is being
-used. Quoting the doc string of the `Transaction` type:
+used. Quoting the docstring of the `Transaction` type:
 
 > A Transaction tracks changes to the file system, allowing them to be rolled
 > back in case of an error. Instead of deleting or overwriting file, the old
@@ -151,7 +151,7 @@ could be to, in chronological order:
 Declaring the beginning and the end of the transaction with particular actions
 is necessary to ensure that the new transaction scheme will not be vulnerable to
 the concurrent execution of another rustup instance. As we will see later, this
-is mostly about acquiring and releasing the reader part of a reader/writer lock.
+is mostly about acquiring the FS mutex that corresponds to the target object.
 
 For example, given a toolchain name `stable`, two versions `v1` and `v2`, and
 `stable` initially pointing to `v1`, we can express this situation with
@@ -182,6 +182,7 @@ stable = stable_tmp;
 
 In other words, in a transaction from `v1` to `v2`, we:
 
+- Acquire the FS mutex that corresponds to `v2`.
 - Create a new reference `stable_tmp` that points to the _updated_ object.
   - Please note that we do know where `v2` should end up with (`&v2`) because we
     can calculate its identifier ahead of time:
@@ -202,6 +203,7 @@ In other words, in a transaction from `v1` to `v2`, we:
   most environments.[^atomic]
 - Finally, move `stable_tmp` to `stable`. This should also be atomic on most
   environments.[^atomic]
+- Release the aforementioned FS mutex.
 
 [^atomic]:
     See
@@ -209,6 +211,19 @@ In other words, in a transaction from `v1` to `v2`, we:
     for a short list of atomic FS operations on Unix. I have mostly used
     operations that are more or less atomic above, but if anything turns out to
     be otherwise, we can always use a heap-global FS lock of some sort.
+
+The `*_tmp` objects and references, which we will conveniently call "in-flight"
+objects and references later on, should be spawned in a clearly different
+location than regular objects and references, as long as they are located on the
+same FS as the `toolchains/` and `heap/` directories respectively so that the
+move is ensured to be atomic.
+
+> NOTE: In the current design, they are all systematically put into `tmp/` which
+> is the original temporary directory used for old-style transactions, the idea
+> being that `rustup` is already supposed to clean up such a directory when a
+> transaction ends, so any files that survived from a previously interrupted
+> transaction can be cleaned up this way. However, they can also occupy
+> specifically designated new directories if proved necessary.
 
 The above has already covered the actions of installing a new toolchain as well
 as modifying an existing toolchain.
@@ -221,29 +236,31 @@ As for uninstalling a toolchain (e.g. `stable`), it is also very simple:
 referee if the latter is unreachable. To actually reclaim disk space, we need a
 GC mechanism for the heap.
 
-A trivial full GC means removing all the unreachable objects in the heap, and to
-do so, a scan of all references as well as another scan of the whole heap are
-required upfront in order to compare the set of referees with what we have in
-the heap.
+The GC should be triggered after each modifying action to the current rustup
+installation, namely after each toolchain update, modification, or
+uninstallation.
 
-<!-- A partial GC means removing all `Toolchain`s in a candidate set that turn
-out to be unreachable. It might be useful when the user has a lot of
-toolchains. -->
+A full GC means removing all the unreachable objects in the heap, and to do so,
+a scan of all references as well as another scan of the whole heap are required
+upfront in order to compare the set of referees with what we have in the heap.
 
-The GC is of course not atomic in anyway, so it should be triggered behind a
-heap-global GC lock.
+As a pure optimization, we can introduce the partial GC, which means selecting a
+set of candidate objects to check for reachability, and only clean up the
+objects that turn out to be unreachable during that scan, which may be useful
+when the user has a lot of toolchains. The reason this is feasible is that an
+object `O` can only change its reachability (and thus may need to be cleaned up)
+via a transaction on a certain reference who previously (when the transaction
+starts) pointed to `O` (e.g. `rustup update stable` or
+`rustup uninstall stable`, where `stable` pointed to `O`), so a possible
+configuration of the candidate set is that only during wildcard operations (e.g.
+`rustup update`) we take all objects on the heap as candidates, and in other
+cases (e.g. `rustup update <refs>`) the candidates should only contain the
+previous referees of all `refs` mentioned in the command.
 
-Furthermore, to avoid potential
-[ToC/ToU](https://en.wikipedia.org/wiki/Time-of-check_to_time-of-use)
-inconsistencies regarding the two scans in a GC cycle (one that scans over all
-references, and the other over the heap), we need to introduce a reader/writer
-lock which is globally-applied to the combination of two sets; a read lock is
-required whenever any set in the combination is written to, with the only
-exception during a GC where a write lock is required.
-
-The GC can be most eagerly triggered after each write to the set, namely after
-each toolchain update or uninstallation. (There doesn't seem to be a need for GC
-after installing a new toolchain, though.)
+The GC is of course not atomic in any way, so it should be triggered behind
+corresponding locks: each candidate can be cleaned up only when we can acquire
+its corresponding FS mutex. If the mutex is occupied, the cleaning action is
+skipped immediately for that candidate.
 
 With every crucial action guarded behind atomic FS operations and/or named
 locks, it should be safe to say that if any conflict (other than the few
@@ -252,38 +269,34 @@ not come from rustup itself.
 
 ## Discussion
 
+### Implementation of the Locks
+
+We use plain FS mutexes for the locks to achieve maximal platform compatibility,
+which is particularly important for Windows environments.
+
+We conceptually have one lock per object, but considering the fact that one may
+have quite a lot of toolchains to install on a single machine, we can define a
+constant `N` (say 64) and use the `mod N` of the object address to assign to
+each address an empty "dummy" lock file located under `$RUSTUP_HOME/locks`.
+Those dummy files are intentionally created on demand and never actively
+destroyed.
+
+By detaching the locks and the actual objects they are locking, the design of
+this locking scheme has gained independence from the advisory/mandatory nature
+of the native FS mutex of the OS.
+
 ### File Leaking
 
 This type of transaction proposed here might leak files/folders when being
-interrupted in the middle, but it should be okay to leave it to the user's
-discretion: this is also what Git and APT do with their "lockfiles".
+interrupted in the middle, but the overall impact should remain minimal because:
 
-During a full GC, however, the remaining in-flight objects from the previous
-interrupted transactions in the heap can be easily cleaned up since the GC
-cannot happen with a transaction in place (thanks to the lock). The same should
-also apply to in-flight references (since they are supposed to have a special
-name format).
+On the one hand, in-flight references and objects are spawned specifically in
+vulnerable locations (in the `tmp/` or similar directories), they are supposed
+to be cleaned up quite often.
 
-### Implementation of the Lock
-
-On Unix systems, a named reader/writer lock can be easily implemented via the
-`fcntl()` locking APIs on a dummy file. The potential "close one, lose all" flaw
-with POSIX `fcntl()`[^fcntl-flaw] will not cause problems for us since we are
-not actually interested in `close()`ing the file (we will conveniently place it
-in a tempdir).
-
-[^fcntl-flaw]:
-    As per the
-    [man page](https://man7.org/linux/man-pages/man2/fcntl_locking.2.html), if a
-    process closes any file descriptor referring to a file, then all of the
-    process's locks on that file are released, regardless of the file
-    descriptor(s) on which the locks were obtained.
-
-On Windows, there is no `fcntl()` equivalent. Instead, we will use a hand-rolled
-reader/writer lock implemented
-[with a named mutex and a named semaphore](https://stackoverflow.com/a/640368).
-The resulting lock is not very performant, but it should be okay for rustup
-since we don't expect a lot of contentions.
+On the other hand, the dummy files used for FS mutexes are supposed to leak.
+However, since they are all empty and their total amount is capped to a
+reasonable number `N`, the overall storage overhead should be minimal.
 
 ### Why Attacking Multiple Issues in a Single Proposal?
 
