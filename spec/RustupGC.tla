@@ -73,6 +73,12 @@ Init ==
 \* Transaction
 \****************************************************************************
 
+Remove(r) ==
+    /\ r \in Refs
+    /\ refs[r] \in Hashes
+    /\ refs' = [refs EXCEPT ![r] = 0]
+    /\ UNCHANGED <<heap, trash, target, pending, phase, lockOwner>>
+
 Start(t, r, h) ==
     /\ phase[t] = "idle"
     /\ r \in Refs
@@ -154,6 +160,7 @@ ReleaseOrCrashGC(h) ==
 \****************************************************************************
 
 Next ==
+    \/ \E r \in Refs : Remove(r)
     \/ \E t \in Transactions, r \in Refs, h \in Hashes :
           Start(t, r, h)
     \/ \E t \in Transactions : AcquireTx(t)
