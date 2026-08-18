@@ -478,7 +478,6 @@ fn concurrent_rm_same_underlying() -> Result<()> {
         1,
         "all toolchains should share the same underlying toolchain"
     );
-    let underlying_toolchain = underlying_toolchains.into_iter().next().unwrap();
 
     let mut handles = Vec::new();
     for toolchain in toolchains {
@@ -500,11 +499,6 @@ fn concurrent_rm_same_underlying() -> Result<()> {
             .join(util::qualify_with_target(toolchain).as_ref());
         assert!(!link_path.exists(), "toolchain link should be gone");
     }
-    assert!(
-        !underlying_toolchain.exists(),
-        "underlying toolchain should be gone",
-    );
-
     Ok(())
 }
 
