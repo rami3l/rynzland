@@ -158,7 +158,7 @@ For example, given a toolchain name `stable`, two versions `v1` and `v2`, and
 Rust-like pseudo-code like so (note that this pseudo-language has no name
 shadowing):
 
-```rust=
+```rust
 let v1: Toolchain = make_v1();
 let v2: Toolchain;
 let mut stable: &Toolchain = &v1;
@@ -166,14 +166,14 @@ let mut stable: &Toolchain = &v1;
 
 If we want to upgrade it to `v2`, so that in the end:
 
-```rust=
+```rust
 stable == &v2
 ```
 
 Below is the list the actions to be performed in chronological order (modulo the
 locking operations):
 
-```rust=
+```rust
 let stable_tmp = &v2;
 let v2_tmp: Toolchain = make_v2();
 v2 = v2_tmp; // FS move/rename `v2_tmp` to `v2`.
@@ -208,9 +208,7 @@ In other words, in a transaction from `v1` to `v2`, we:
 [^atomic]:
     See
     [here](https://rcrowley.org/2010/01/06/things-unix-can-do-atomically.html)
-    for a short list of atomic FS operations on Unix. I have mostly used
-    operations that are more or less atomic above, but if anything turns out to
-    be otherwise, we can always use a heap-global FS lock of some sort.
+    for a short list of atomic FS operations on Unix.
 
 The `*_tmp` objects and references, which we will conveniently call "in-flight"
 objects and references later on, should be spawned in a clearly different
@@ -230,7 +228,9 @@ as modifying an existing toolchain.
 
 As for uninstalling a toolchain (e.g. `stable`), it is also very simple:
 
-`rust= forget(stable) // Unlink/remove the FS link "stable". `
+```rust
+forget(stable) // Unlink/remove the FS link "stable".
+```
 
 ... of course that is only theoretically correct since it might be leaking its
 referee if the latter is unreachable. To actually reclaim disk space, we need a
