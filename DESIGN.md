@@ -1,5 +1,10 @@
 # Proposal: Locked Rustup via a Toolchain Pool v2
 
+> [!NOTE]
+>
+> This proposal comes with a TLA+ specification of the new transaction system,
+> which can be found under [`./spec`](./spec/RustupGC.tla).
+
 ## Status Quo
 
 This proposal tries to address several existing issues with the current rustup
@@ -323,3 +328,44 @@ performed on a per toolchain name-basis.
 Finally, now that we have already introduced the references, we only need to
 find a way for the objects to be content-addressable to deduplicate different
 copies of the same object.
+
+### Gradual Rollout Strategy
+
+Continuing with the above discussion and in order to reduce the risk of having
+to merge a very complex and all-encompassing change into rustup, we propose a
+gradual rollout strategy inspired by [A/B partitioning]. The idea is to have
+process-safe transactions in the first stage of the project, and then add the
+content-addressable heap in the second stage.
+
+[A/B partitioning]: https://source.android.com/docs/core/ota/ab
+
+At the end of the first stage, instead of identifying each object with its Rust
+version string and its component set as
+[previously discussed](#proposed-solution), each object is identified according
+to the following factors:
+
+- The name of its referer (e.g. `stable`, `1.92`).
+- A partition identifier (e.g. `A` or `B`).
+
+When modifying an object via a reference (e.g. `stable`), we first check what
+partition the object is in. If it is in partition `A` (e.g. `stable-A`), the
+in-flight object is expected to spawn in partition `B` (e.g. `stable-B`), and
+vice versa. In other words, this is essentially a dummy content-addressable
+scheme that will cause a referee of the same reference to keep oscillating
+between two different addresses on the heap without actually deduplicating them.
+
+Since our new transactional semantics only require the addresses to be unique
+enough without having to go content-addressable from Day One, this should be a
+quite reasonable temporary solution for the first stage.
+
+For a smoother transition to the second stage, when implementing the
+[locks](#implementation-of-the-locks), it'd be better if special care can be
+taken to ensure that:
+
+- The same reference name will always be assigned the same lock.
+- Rustup and notably the GC mechanism will be able to work on any object, both
+  after stage 1 and after stage 2, preferably by sharing the same lock
+  assignment logic.
+
+Finally, this transient state can be modeled using the existing specification,
+since it explicitly avoids any mentions of the addressing scheme of the objects.
