@@ -21,8 +21,6 @@ Incarnations ==
 VARIABLES
     \* @type: Set({hash: Int, id: Int});
     heap,
-    \* @type: Set({hash: Int, id: Int});
-    trash,
     \* @type: Str -> Int;
     refs,
     \* @type: Str -> Str;
@@ -35,12 +33,10 @@ VARIABLES
     lockOwner
 
 vars ==
-    <<heap, trash, refs, target, pending, phase, lockOwner>>
+    <<heap, refs, target, pending, phase, lockOwner>>
 
 TypeOK ==
     /\ heap \subseteq Incarnations
-    /\ trash \subseteq Incarnations
-    /\ heap \cap trash = {}
     /\ refs \in [Refs -> (Hashes \cup {0})]
     /\ target \in [Transactions -> (Refs \cup {"none"})]
     /\ pending \in [Transactions -> (Hashes \cup {0})]
@@ -55,14 +51,10 @@ Reachable(h) ==
     \E r \in Refs : refs[r] = h
 
 FreshFor(h) ==
-    {i \in Incarnations :
-        /\ i.hash = h
-        /\ i \notin heap
-        /\ i \notin trash}
+    {i \in Incarnations : i.hash = h /\ i \notin heap}
 
 Init ==
     /\ heap = {}
-    /\ trash = {}
     /\ refs = [r \in Refs |-> 0]
     /\ target = [t \in Transactions |-> "none"]
     /\ pending = [t \in Transactions |-> 0]
@@ -77,7 +69,7 @@ Remove(r) ==
     /\ r \in Refs
     /\ refs[r] \in Hashes
     /\ refs' = [refs EXCEPT ![r] = 0]
-    /\ UNCHANGED <<heap, trash, target, pending, phase, lockOwner>>
+    /\ UNCHANGED <<heap, target, pending, phase, lockOwner>>
 
 Start(t, r, h) ==
     /\ phase[t] = "idle"
@@ -86,14 +78,14 @@ Start(t, r, h) ==
     /\ phase' = [phase EXCEPT ![t] = "running"]
     /\ target' = [target EXCEPT ![t] = r]
     /\ pending' = [pending EXCEPT ![t] = h]
-    /\ UNCHANGED <<heap, trash, refs, lockOwner>>
+    /\ UNCHANGED <<heap, refs, lockOwner>>
 
 AcquireTx(t) ==
     /\ phase[t] = "running"
     /\ pending[t] \in Hashes
     /\ lockOwner[pending[t]] = "none"
     /\ lockOwner' = [lockOwner EXCEPT ![pending[t]] = t]
-    /\ UNCHANGED <<heap, trash, refs, target, pending, phase>>
+    /\ UNCHANGED <<heap, refs, target, pending, phase>>
 
 Create(t) ==
     /\ phase[t] = "running"
@@ -103,7 +95,7 @@ Create(t) ==
     /\ FreshFor(pending[t]) # {}
     /\ LET i == CHOOSE x \in FreshFor(pending[t]) : TRUE
        IN heap' = heap \cup {i}
-    /\ UNCHANGED <<trash, refs, target, pending, phase, lockOwner>>
+    /\ UNCHANGED <<refs, target, pending, phase, lockOwner>>
 
 Publish(t) ==
     /\ phase[t] = "running"
@@ -115,7 +107,7 @@ Publish(t) ==
     /\ target' = [target EXCEPT ![t] = "none"]
     /\ phase' = [phase EXCEPT ![t] = "idle"]
     /\ lockOwner' = [lockOwner EXCEPT ![pending[t]] = "none"]
-    /\ UNCHANGED <<heap, trash>>
+    /\ UNCHANGED <<heap>>
 
 CrashTx(t) ==
     /\ phase[t] = "running"
@@ -126,7 +118,7 @@ CrashTx(t) ==
     /\ phase' = [phase EXCEPT ![t] = "idle"]
     /\ target' = [target EXCEPT ![t] = "none"]
     /\ pending' = [pending EXCEPT ![t] = 0]
-    /\ UNCHANGED <<heap, trash, refs>>
+    /\ UNCHANGED <<heap, refs>>
 
 \***************************************************************************
 \* Garbage collection
@@ -137,7 +129,7 @@ AcquireGC(h) ==
     /\ lockOwner[h] = "none"
     /\ HasHash(heap, h)
     /\ lockOwner' = [lockOwner EXCEPT ![h] = "gc"]
-    /\ UNCHANGED <<heap, trash, refs, target, pending, phase>>
+    /\ UNCHANGED <<heap, refs, target, pending, phase>>
 
 CollectGC(h) ==
     /\ h \in Hashes
@@ -145,15 +137,14 @@ CollectGC(h) ==
     /\ HasHash(heap, h)
     /\ ~Reachable(h)
     /\ LET i == CHOOSE x \in heap : x.hash = h
-       IN /\ heap' = heap \ {i}
-          /\ trash' = trash \cup {i}
+       IN heap' = heap \ {i}
     /\ UNCHANGED <<refs, target, pending, phase, lockOwner>>
 
 ReleaseOrCrashGC(h) ==
     /\ h \in Hashes
     /\ lockOwner[h] = "gc"
     /\ lockOwner' = [lockOwner EXCEPT ![h] = "none"]
-    /\ UNCHANGED <<heap, trash, refs, target, pending, phase>>
+    /\ UNCHANGED <<heap, refs, target, pending, phase>>
 
 \****************************************************************************
 \* Next
@@ -198,19 +189,13 @@ RefIntegrity ==
     \A r \in Refs :
         refs[r] = 0 \/ HasHash(heap, refs[r])
 
-HeapTrashDisjoint ==
-    heap \cap trash = {}
-
 LockConsistency ==
     \A h \in Hashes :
         lockOwner[h] = "none" \/ lockOwner[h] \in Actors
 
 TxLockConsistency ==
-    \A t \in Transactions :
-        \A h \in Hashes :
-            lockOwner[h] = t =>
-                /\ phase[t] = "running"
-                /\ pending[t] = h
+    \A t \in Transactions, h \in Hashes :
+        lockOwner[h] = t => phase[t] = "running" /\ pending[t] = h
 
 \****************************************************************************
 \* Properties
@@ -230,7 +215,6 @@ NoMoreUses(h) ==
 
 QuiescentGarbageCollected ==
     \A h \in Hashes :
-        (<>[] NoMoreUses(h))
-            => (<>[] ~HasHash(heap, h))
+        (<>[] NoMoreUses(h)) => (<>[] ~HasHash(heap, h))
 
 =============================================================================
