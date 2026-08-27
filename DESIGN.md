@@ -107,14 +107,20 @@ entities in rustup.
 The overall idea is to separate this problem into two different sets:
 
 - That of objects. In rustup, an object is an actual toolchain with all the
-  components we want it to contain, corresponding to an FS directory located at
+  components we want it to contain. Each object that has been fully installed
+  corresponds to an FS directory located at
   `$RUSTUP_HOME/heap/<object-identifier>`.
-- That of references. In rustup, a reference is a toolchain name, which
-  corresponds to an FS link[^fs-link] located at
-  `$RUSTUP_HOME/toolchains/<toolchain-name>`. In any normal state, a reference
-  should point to an existing object, but in transient states, it can also be
-  dangling as long as it points to a valid object at the end of a transaction,
-  as we will see later in this introduction.
+- That of references. In rustup, a reference is a toolchain name. Each installed
+  reference corresponds to an FS link[^fs-link] located at
+  `$RUSTUP_HOME/toolchains/<toolchain-name>`.
+  - At any given moment, an installed reference should point to an existing
+    object.
+  - An in-flight reference which may show up during a transaction may be
+    dangling, but before the corresponding transaction successfully ends, it
+    must have become fully installed.
+  - This means, when a transaction involves both an in-flight object and an
+    in-flight reference, we should always add the reference last and remove it
+    first.
 
 [^fs-link]:
     Here we only consider symlinks or NTFS junctions to a directory, since
@@ -124,11 +130,11 @@ The overall idea is to separate this problem into two different sets:
 At any point in time, the members of those two sets are of a finite amount and
 can be enumerated by walking the respective directory.
 
-Continuing with our analogy, the directory of objects will be conveniently
-called the heap from now on. It is thus natural to think about interning the
-heap to reduce disk space waste as long as they are immutable if we can find an
-identifying mechanism. In this proposal, an object is identified by the
-following factors:
+Continuing with our analogy, the directory of fully installed objects will be
+conveniently called the heap from now on. It is thus natural to think about
+interning the heap to reduce disk space waste, as long as objects are immutable
+and we can find an identifying mechanism. In this proposal, an object is
+identified by the following factors:
 
 - The Rust version string[^manifest-hash].
 - The ordered collection of fully qualified component names before renaming.
@@ -148,9 +154,12 @@ approach so the objects would stay immutable all the time. What we actually do
 could be to, in chronological order:
 
 - Declare the beginning of the transaction.
-- Construct a new object in the heap that satisfies our needs (with a
-  same/different Rust version and/or a same/different set of components).
-- Alter the reference so that it points to the newly constructed object.
+- Initialize a new object that satisfies our needs (with a same/different Rust
+  version and/or a same/different set of components).
+- Initialize a new reference so that it can correctly point to the
+  aforementioned object at the latter's final location.
+- Move the object and the reference (_in this order_) to their respective final
+  location, admitting that the moving of the reference may be overwriting.
 - Declare the end of the transaction.
 
 Declaring the beginning and the end of the transaction with particular actions
@@ -199,11 +208,10 @@ In other words, in a transaction from `v1` to `v2`, we:
   - This way, if another rustup instance tries to modify `stable`, the creation
     of `stable_tmp` will fail immediately, since the creation of references (FS
     links) should often be atomic.[^atomic]
-- Start functionally updating `v1` to `v2` by creating in the heap an
-  uninitialized object `v2_tmp` and initializing it in place.
+- Start functionally updating `v1` to `v2` by creating an uninitialized object
+  `v2_tmp` and initializing it in place.
   - Similarly, this prevents another rustup instance from updating _to_ the same
-    object, since the creation of objects (FS directories) should often be
-    atomic.[^atomic]
+    object, which is guarded by the lock on `v2` acquired previously.
 - When the construction is finished, move `v2_tmp` to `v2`. This is atomic on
   most environments.[^atomic]
 - Finally, move `stable_tmp` to `stable`. This should also be atomic on most
@@ -215,14 +223,16 @@ In other words, in a transaction from `v1` to `v2`, we:
     [here](https://rcrowley.org/2010/01/06/things-unix-can-do-atomically.html)
     for a short list of atomic FS operations on Unix.
 
-The `*_tmp` objects and references, which we will conveniently call "in-flight"
-objects and references later on, should be spawned in a clearly different
-location than regular objects and references, as long as they are located on the
-same FS as the `toolchains/` and `heap/` directories respectively so that the
-move is ensured to be atomic.
+The `*_tmp` objects and references mentioned above, which we will conveniently
+call "in-flight" objects and references later on, should be spawned in a clearly
+different location than regular objects and references, as long as they are
+located on the same FS as the `toolchains/` and `heap/` directories respectively
+so that the move is ensured to be atomic.
 
-> NOTE: In the current design, they are all systematically put into `tmp/` which
-> is the original temporary directory used for old-style transactions, the idea
+> [!NOTE]
+>
+> In the current design, they are all systematically put into `tmp/` which is
+> the original temporary directory used for old-style transactions, the idea
 > being that `rustup` is already supposed to clean up such a directory when a
 > transaction ends, so any files that survived from a previously interrupted
 > transaction can be cleaned up this way. However, they can also occupy
@@ -313,11 +323,10 @@ be easily identifiable, and more importantly, it must not alter the existing
 toolchains in any non-atomic way.
 
 The introduction of a staging area would be a natural consequence of that
-requirement. In this proposal, our main staging area would be the heap. In the
-transient state, there will be in-flight objects in the heap, but they remain
-easily distinguishable since they are not reachable until the transaction
-finishes. At the same time, the introduction of the indirection layer of the
-references has made it easier to achieve atomicity on most platforms.
+requirement. In this proposal, our main staging area would be the directory
+where in-flight objects and references are initialized. At the same time, the
+introduction of the indirection layer of the references has made it easier to
+achieve atomicity on most platforms.
 
 Next up, to prevent clashes when concurrently modifying the same toolchain, we
 would like to add some sort of per-toolchain locking mechanism, so that only one
