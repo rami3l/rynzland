@@ -4,3 +4,4 @@
 *.out
 states/
 **/*~
+/_apalache-out

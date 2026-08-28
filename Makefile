@@ -3,7 +3,9 @@ TLA_BASE := target/tla
 TLA2TOOLS := $(TLA_BASE)/tla2tools.jar
 
 spec: $(TLA2TOOLS)
-	java -Dtlc2.TLC.stopAfter=1800 -Dtlc2.TLC.ide=Github -cp $< tlc2.TLC -workers auto -lncheck final -checkpoint 60 -coverage 60 -tool -deadlock spec/RustupGC
+	cd spec && \
+		java -Dtlc2.TLC.stopAfter=1800 -Dtlc2.TLC.ide=Github -cp ../$< tlc2.TLC \
+		-workers auto -lncheck final -checkpoint 60 -coverage 60 -tool -deadlock RustupGC
 .PHONY: spec
 
 $(TLA2TOOLS): | $(TLA_BASE)
@@ -16,23 +18,18 @@ APALACHE_VERSION := 0.47.0
 APALACHE := $(TLA_BASE)/apalache/bin/apalache-mc
 
 apalache: $(APALACHE)
-	$< check --config=spec/RustupGC_apalache.cfg spec/RustupGC.tla
+	cd spec && ../$< check --config=RustupGC_apalache.cfg RustupGC.tla
 .PHONY: apalache
 
 apalache-simulate: $(APALACHE)
-	$< simulate --config=spec/RustupGC_apalache.cfg spec/RustupGC.tla
+	cd spec && ../$< simulate --config=RustupGC_apalache.cfg RustupGC.tla
 .PHONY: apalache-simulate
 
-$(APALACHE): $(TLA_BASE)/apalache.tgz
-	tar -xzf $< -C $(TLA_BASE)
-	touch $@
-
-$(TLA_BASE)/apalache.tgz: $(TLA_BASE)/apalache
-	wget -O $@ https://github.com/apalache-mc/apalache/releases/download/v$(APALACHE_VERSION)/apalache.tgz
-
-$(TLA_BASE)/apalache: | $(TLA_BASE)
-	mkdir -p $@
+$(APALACHE): | $(TLA_BASE)
+	wget https://github.com/apalache-mc/apalache/releases/download/v$(APALACHE_VERSION)/apalache.tgz \
+		-O - | tar -xz -C $(TLA_BASE)
 
 clean:
 	rm -rf $(TLA_BASE)
+	cd spec && git clean -fdX
  .PHONY: clean

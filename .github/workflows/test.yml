@@ -60,6 +60,7 @@ jobs:
               paths:
                 - 'spec/**/*.tla'
                 - 'spec/**/*.cfg'
+                - '**/Makefile'
 
   tla-tlc:
     needs: skip-check
