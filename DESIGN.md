@@ -231,12 +231,17 @@ so that the move is ensured to be atomic.
 
 > [!NOTE]
 >
-> In the current design, they are all systematically put into `tmp/` which is
-> the original temporary directory used for old-style transactions, the idea
-> being that `rustup` is already supposed to clean up such a directory when a
-> transaction ends, so any files that survived from a previously interrupted
-> transaction can be cleaned up this way. However, they can also occupy
-> specifically designated new directories if proved necessary.
+> In the current design, they are all put into a special subdirectory of
+> `heap/`. The idea being that `rustup` is already supposed to clean up a series
+> of directories in certain occasions, so we can make this happen more
+> frequently (after each GC to be precise), and add this new directory to that
+> procedure, so that any files which survived from a previously interrupted
+> transaction can be promptedly cleaned up. Additionally, special care must be
+> taken when trying to delete temporary objects and references to prevent
+> accidentially removing any file or directory that is still being initialized,
+> and their removal should be guarded by the corresponding object lock (which
+> means each in-flight reference should have a name for which we can easily
+> deduce the corresponding object lock).
 
 The above has already covered the actions of installing a new toolchain as well
 as modifying an existing toolchain.
