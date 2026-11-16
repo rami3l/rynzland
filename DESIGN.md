@@ -368,18 +368,61 @@ vice versa. In other words, this is essentially a dummy content-addressable
 scheme that will cause a referee of the same reference to keep oscillating
 between two different addresses on the heap without actually deduplicating them.
 
+Please note that this loses some nice properties of having an actual
+content-addressable heap. One example would be that updating `stable` with an
+interruption between the object rename and the reference rename might result in
+both partitions being occupied and thus manual intervention is required to clean
+up the heap, but:
+
+- This situation should be extremely rare.
+- We could introduce a `rustup gc` subcommand to force a full GC which will help
+  when this really happens.
+- This issue will be automatically resolved when we move to stage 2 where a real
+  content-addressable heap is added.
+
 Since our new transactional semantics only require the addresses to be unique
 enough without having to go content-addressable from Day One, this should be a
 quite reasonable temporary solution for the first stage.
 
-For a smoother transition to the second stage, when implementing the
-[locks](#implementation-of-the-locks), it'd be better if special care can be
-taken to ensure that:
+It is also important to note that, a rustup installation at stage 1 can also be
+modeled using the existing specification, since the latter has explicitly
+avoided any mentions of the addressing scheme of the objects.
 
-- The same reference name will always be assigned the same lock.
-- Rustup and notably the GC mechanism will be able to work on any object, both
-  after stage 1 and after stage 2, preferably by sharing the same lock
-  assignment logic.
+#### Migrating to Stage 1
 
-Finally, this transient state can be modeled using the existing specification,
-since it explicitly avoids any mentions of the addressing scheme of the objects.
+When migrating an existing installation from stage 0 to stage 1, we will be able
+to easily distinguish the different existing kinds of toolchains in the now
+"references" directory:
+
+- Non-channel toolchains (e.g. `system`): since they aren't modifiable by
+  rustup, they can stay where they are as FS links, and no migration is needed.
+
+- Channel toolchains (e.g. `stable`, `1.92`): since each of these toolchains is
+  modifiable by rustup, we will need to acquire the lock for the toolchain's
+  final address on the heap, move it to that address, and create a new reference
+  for it. This can be done either implicitly by rustup when it detects that the
+  toolchain is at stage 0, or preferably, manually upon user request (cf.
+  `rustup self upgrade-data`; a hint can be shown to the user when such a
+  migration seems necessary).
+
+#### Migrating to Stage 2
+
+For a smoother transition to stage 2, when
+[implementing the locks](#implementation-of-the-locks), it'd be better if
+special care can be taken to ensure that rustup and notably the GC mechanism
+will be able to work on any object, both after stage 1 and after stage 2,
+preferably by sharing the same lock assignment logic.
+
+Once the above is satisfied, we can then introduce stage 2's content-addressable
+heap by simply changing the addressing scheme of the objects. Each channel
+toolchain will be used as usual until rustup requests an update for it, at which
+point a new object under the stage 2 addressing scheme will be created in the
+heap and the reference will be updated to point to it. The GC will then be able
+to clean up the old object as intended.
+
+The logic of migrating a toolchain from stage 0 to stage 1 as discussed
+[above](#migrating-to-stage-1) will still be valid after stage 2, which will in
+turn be responsible for migrating stage 0 objects to stage 2. Running the
+migration serially should be sufficient for handling the case where many stage 0
+objects resolve to the same stage 2 address (and thus the reusing of objects are
+involved).
